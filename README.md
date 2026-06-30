@@ -6,3 +6,4 @@
 
 3greedy will test the allocation of big chunks of memory DMA that you will need. 
 
+Egg1 is my first attempt to get the sound from max9814 and send it to the pc.
