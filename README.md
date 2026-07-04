@@ -7,3 +7,5 @@
 3greedy will test the allocation of big chunks of memory DMA that you will need. 
 
 Egg1 is my first attempt to get the sound from max9814 and send it to the pc.
+
+Egg2 is my second attempt to get the sound from max9814, get the spectrum and send both to the pc.
