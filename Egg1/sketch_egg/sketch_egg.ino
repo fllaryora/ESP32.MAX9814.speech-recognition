@@ -26,7 +26,7 @@ void setup() {
   digitalWrite(LED_PIN, LOW);
 
   uint8_t errorBlinkLed = LED_PIN;
-
+  //=== First stage == initialization
   rawAudioData = malloc_dma_buffer(TOTAL_SAMPLES_IN_BYTES, errorBlinkLed);
   spectrogramOutput = (float*) malloc_dma_buffer(SPECTRUM_OUTPUT_SIZE * sizeof(float), errorBlinkLed);
   memory = (Spectrogram*) malloc_dma_buffer(sizeof(Spectrogram), errorBlinkLed);

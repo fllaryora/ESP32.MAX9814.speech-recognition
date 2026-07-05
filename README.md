@@ -6,6 +6,7 @@
 
 3greedy will test the allocation of big chunks of memory DMA that you will need. 
 
-Egg1 is my first attempt to get the sound from max9814 and send it to the pc.
-
-Egg2 is my second attempt to get the sound from max9814, get the spectrum and send both to the pc.
+Egg1:
+ get the sound from max9814,
+ get the spectrum and send both to the pc.
+ Using python it re-generate the process of ESP 32 in order to later: create a model and learn. 

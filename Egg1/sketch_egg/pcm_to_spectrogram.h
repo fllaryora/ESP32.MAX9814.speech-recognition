@@ -86,9 +86,9 @@ If the last sample is 48000, I get (times-1)== 298
 // Initialize the hanning window coefficients.
 // ===============================
 void initializeHanningWindows(Spectrogram * memory) {
-  const float argument = 2.0f * PI / SAMPLES_FOR_EACH_FFT;
+  const float argument = 2.0f * PI / (SAMPLES_FOR_EACH_FFT - 1.0f);
   for (int sampleIndex = 0; sampleIndex < SAMPLES_FOR_EACH_FFT; sampleIndex++) {
-	  memory->hanningCoefficients[sampleIndex] = 0.5f - 0.5f * cosf(argument * (sampleIndex + 0.5f));
+	  memory->hanningCoefficients[sampleIndex] = 0.5f - 0.5f * cosf(argument * sampleIndex);
   }
 }
 
@@ -136,41 +136,28 @@ void getSpectrogramSegment(Spectrogram * memory, float *output) {
   int outputIndex = 0;
 
   // Average pooling stage
-  for (int binIndex = 0; binIndex < SPECTRUM_BINS; binIndex += AVG_POOLING_SIZE) {
-    
-	  float average = 0.0f;
-	  int binCounter = 0;
-    for (int binOffset = 0;
-        binOffset < AVG_POOLING_SIZE && (binIndex + binOffset) < SPECTRUM_BINS;
-        binOffset++
-    ) {
-      average += memory->fftEnergy[binIndex + binOffset];
-      binCounter++;
-    }
-    average /= binCounter;
-    // The loop invariant is The binIndex moves forward AVG_POOLING_SIZE at the end of the loop.
-    if(POOLED_BINS_LENGTH <= outputIndex) {
-      break;
-    }
-    output[outputIndex] = log10f(average + EPSILON);
-    outputIndex++;
-  }
+  for (int pooledIndex = 0;
+      pooledIndex < POOLED_BINS_LENGTH;
+      pooledIndex++)
+  {
+      int firstBin = pooledIndex * AVG_POOLING_SIZE;
 
-  bool isTheLastOneBinWasNotProccessed = (SPECTRUM_BINS / AVG_POOLING_SIZE) < POOLED_BINS_LENGTH;
-  if( isTheLastOneBinWasNotProccessed ) {
-    float average = 0.0f;
-	  int binCounter = 0;
+      float sum = 0.0f;
+      int validBin = 0;
 
-    for (int binOffset = SPECTRUM_BINS - AVG_POOLING_SIZE;
-        binOffset < SPECTRUM_BINS ;
-        binOffset++
-    ) {
-      average += memory->fftEnergy[binOffset];
-      binCounter++;
-    }
-    average /= binCounter;
+      for (int offset = 0; offset < AVG_POOLING_SIZE; offset++)
+      {
+          int bin = firstBin + offset;
 
-    output[SPECTRUM_BINS - 1] = log10f(average + EPSILON);
+          if (bin < SPECTRUM_BINS){
+            sum += memory->fftEnergy[bin];
+            validBin++;
+          }
+
+      }
+
+      output[pooledIndex] =
+          log10f(sum / validBin + EPSILON);
   }
 
 }
