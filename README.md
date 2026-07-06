@@ -18,6 +18,12 @@
  get the spectrum and send both to the pc.
  Using python it re-generate the process of ESP 32 in order to later: create a model and learn. 
  
+MAX9814 -> ESP32
+GND -> GND
+VDD+GAIN connected together, attached to 3.3v
+OUT -> GPIO36
+
+
 ## DATASET GATHERIN
 Use the code of 4Egg1,
 but In the esp32, do not set the spectrum
@@ -26,3 +32,14 @@ but In the PC, do not ask for the spectrum, and do not compare. just save the wa
 
 ## DATASET DATA AUGmentation
 Use 5Augmentation to create wavs with noise.
+
+---
+
+SD card adapter -> ESP32
+CS -> IO5
+SCK -> IO18
+MOSI -> IO23
+MISO -> IO19
+VCC -> 3.3v
+GND -> GND
+
