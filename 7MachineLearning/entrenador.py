@@ -5,6 +5,7 @@ import tensorflow as tf
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score
 
 from tensorflow.keras.utils import to_categorical
 
@@ -236,7 +237,7 @@ def create_model( image_height, image_width, channels, num_labels):
     return model_CNN
 
 
-def plot_confusion_matrix(cm, class_names):
+def plot_confusion_matrix(cm, class_names, file_name):
     """
       Returns a matplotlib figure containing the plotted confusion matrix.
 
@@ -267,9 +268,10 @@ def plot_confusion_matrix(cm, class_names):
     plt.ylabel("True label")
     plt.xlabel("Predicted label")
     plt.savefig(
-        "confusion_matrix.png",
+        f"confusion_matrix_{file_name}.png",
         dpi=300
     )
+
 
 # --------------------------------------------------
 # MAIN
@@ -373,4 +375,105 @@ if __name__ == "__main__":
     cm = tf.math.confusion_matrix(labels=y_true, predictions=y_pred)
 
     # 4. Let's calculate the error matrix
-    plot_confusion_matrix(cm, label_names)
+    plot_confusion_matrix(cm, label_names, "keras")
+
+# --------------------------------------------------
+# TFLITE CONVERSION
+# --------------------------------------------------
+
+def representative_dataset():
+
+    for i in range(len(X_train)):
+        # We wrap each row in a batch of size (IMAGE_HEIGHT, IMAGE_WIDTH, CHANNELS).
+        data = np.expand_dims(X_train[i].astype(np.float32),axis=0)
+
+        yield [data]
+
+
+print("\nConverting to TFLite...")
+
+converter = tf.lite.TFLiteConverter.from_keras_model(model_CNN)
+converter.representative_dataset = representative_dataset
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+converter.inference_input_type = tf.float32
+converter.inference_output_type = tf.int8
+tflite_model = converter.convert()
+
+with open("speech_commands_299x41.tflite","wb") as f:
+    f.write(tflite_model)
+
+print("\nSaved:","speech_commands_299x41.tflite")
+
+# --------------------------------------------------
+# LOAD TFLITE MODEL
+# --------------------------------------------------
+
+interpreter = tf.lite.Interpreter(model_path="speech_commands_299x41.tflite")
+
+interpreter.allocate_tensors()
+
+input_details = interpreter.get_input_details()
+
+output_details = interpreter.get_output_details()
+
+print("\nInput details:")
+print(input_details)
+
+print("\nOutput details:")
+print(output_details)
+
+input_scale, input_zero_point = (input_details[0]["quantization"])
+
+print("\nInput scale:",input_scale)
+
+print("Input zero point:",input_zero_point)
+
+# --------------------------------------------------
+# EVALUATE TFLITE MODEL
+# --------------------------------------------------
+
+predictions_tflite = []
+predicted_labels = []
+true_labels = []
+
+for i in range(X_test.shape[0]):
+
+    X_input = X_test[i].astype(np.float32)
+
+    interpreter.set_tensor(input_details[0]["index"],
+        np.expand_dims(X_input,axis=0)
+    )
+
+    interpreter.invoke()
+
+    tflite_prediction = interpreter.get_tensor(output_details[0]["index"])
+
+    predictions_tflite.append(tflite_prediction[0])
+
+    predicted_class = np.argmax(tflite_prediction)
+
+    true_class = np.argmax(Y_test[i])
+
+    predicted_labels.append(predicted_class)
+
+    true_labels.append(true_class)
+
+# --------------------------------------------------
+# TFLITE ACCURACY
+# --------------------------------------------------
+
+
+tflite_accuracy = accuracy_score(true_labels, predicted_labels)
+
+print("\nTFLite Accuracy:", tflite_accuracy)
+
+# --------------------------------------------------
+# TFLITE CONFUSION MATRIX
+# --------------------------------------------------
+
+cm_tflite = tf.math.confusion_matrix( labels=true_labels, predictions=predicted_labels)
+
+plot_confusion_matrix(cm_tflite,label_names,"tflite")
+
+print("\nTFLite validation complete.")
