@@ -6,7 +6,7 @@
 #include "./TensorFlowLiteModelConfig.h"
 
 #define LED_PIN 2  // BLUE LED on ESP32 - D2 //NO PIN
-#define SERIAL_BAUD 921600 //460800//115200
+#define SERIAL_BAUD 115200 //460800//115200
 // other speeds
 //230_400
 //460_800
@@ -16,9 +16,13 @@
 uint16_t * rawAudioData = nullptr; // Audio buffer
 float*  spectrogramOutput = nullptr; // image buffer
 Spectrogram* memory  = nullptr; //  configuration structure
+static uint8_t *tensor_arena = nullptr;
+ConvNeurNetwork* cnn = nullptr;
 
 static const uint32_t serialInBytes = TOTAL_SAMPLES_IN_BYTES;
 static const uint32_t serialFramesInBytes = SPECTRUM_OUTPUT_SIZE * sizeof(float);
+constexpr int kCategoryCount = 6;
+const char* kCategoryLabels[kCategoryCount] = {"0_Ayuda", "1_Basura", "2_Listo", "3_No", "4_Papel", "5_Si"};
 
 void setup() {
   //speed of comunication with computer:
@@ -30,7 +34,14 @@ void setup() {
   uint8_t errorBlinkLed = LED_PIN;
   //=== First stage == initialization
   rawAudioData = malloc_dma_buffer(TOTAL_SAMPLES_IN_BYTES, errorBlinkLed);
-  spectrogramOutput = (float*) malloc_dma_buffer(SPECTRUM_OUTPUT_SIZE * sizeof(float), errorBlinkLed);
+  
+  tensor_arena = (uint8_t *) malloc_dma_buffer(TENSOR_ARENA_SIZE , errorBlinkLed);
+  cnn = (ConvNeurNetwork*) malloc_dma_buffer(sizeof(ConvNeurNetwork), errorBlinkLed);
+  cnn->tensor_arena = tensor_arena;
+  setupCNN(cnn, errorBlinkLed);
+
+  //To write the spectrogram strightfoward on CNN input
+  spectrogramOutput =  cnn->input_data;
   memory = (Spectrogram*) malloc_dma_buffer(sizeof(Spectrogram), errorBlinkLed);
   memory->rawAudioDataInPcm = (int16_t * ) rawAudioData;
   memory->spectrogramOutput = spectrogramOutput;
@@ -49,7 +60,6 @@ void setup() {
   }
 
   setupI2S();
-  setupCNN(errorBlinkLed);
 
   digitalWrite(LED_PIN, HIGH);
   delay(500);
@@ -62,17 +72,15 @@ void setup() {
 }
 
 void loop() {
- 
-    
   uint8_t errorBlinkLed = LED_PIN;
   uint8_t recordingLed = LED_PIN;
   recordAudio(rawAudioData, recordingLed, errorBlinkLed);
   get_spectrogram( memory );
 
   if(memory->smoothedNoiseFloor > 2.2f ){
-    String prediction = getClassFromSpectrogtam(memory);
+    runCNN( cnn, errorBlinkLed);
+    String prediction = getPrediction( kCategoryCount, cnn->probabilities, kCategoryLabels);
     Serial.printf("Prediction: %s\n", prediction);
   }
-
 
 }
