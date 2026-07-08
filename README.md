@@ -33,7 +33,12 @@ but In the PC, do not ask for the spectrum, and do not compare. just save the wa
 ## DATASET DATA AUGmentation
 Use 5Augmentation to create wavs with noise.
 
+## 7Machinne Learning with tensor flow lite Folder
+From dataset wavs it create the model.cc file which is necesary to have it in the ESP32.
 ---
+
+## https://github.com/tensorflow/tflite-micro
+
 
 SD card adapter -> ESP32
 CS -> IO5
