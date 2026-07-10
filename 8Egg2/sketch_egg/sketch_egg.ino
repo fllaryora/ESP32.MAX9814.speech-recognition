@@ -30,25 +30,31 @@ void setup() {
 
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
-
+  
   uint8_t errorBlinkLed = LED_PIN;
+  
   //=== First stage == initialization
   rawAudioData = malloc_dma_buffer(TOTAL_SAMPLES_IN_BYTES, errorBlinkLed);
   
   tensor_arena = (uint8_t *) malloc_dma_buffer(TENSOR_ARENA_SIZE , errorBlinkLed);
+  
   cnn = (ConvNeurNetwork*) malloc_dma_buffer(sizeof(ConvNeurNetwork), errorBlinkLed);
+  
   cnn->tensor_arena = tensor_arena;
+  
   setupCNN(cnn, errorBlinkLed);
-
+  
   //To write the spectrogram strightfoward on CNN input
   spectrogramOutput =  cnn->input_data;
   memory = (Spectrogram*) malloc_dma_buffer(sizeof(Spectrogram), errorBlinkLed);
+  
   memory->rawAudioDataInPcm = (int16_t * ) rawAudioData;
   memory->spectrogramOutput = spectrogramOutput;
   
   memory->kissFFTConfiguration = NULL;
   memory->smoothedNoiseFloor = 0.0f;
   initializeHanningWindows(memory);
+  
   memory->kissFFTConfiguration = kiss_fftr_alloc(SAMPLES_FOR_EACH_FFT, 0, NULL, NULL);
 
   bool isFFTConfigurationNotInitialized = !(memory->kissFFTConfiguration);
@@ -56,11 +62,16 @@ void setup() {
     Serial.println("ERROR: kiss_fftr_alloc() FAILED! Returned NULL!");
     Serial.println("Check: SAMPLES_FOR_EACH_FFT must be > 0");
     Serial.println("Check: Available RAM");
-    while(true);
+    while(true){
+      digitalWrite(errorBlinkLed, HIGH);
+      delay(500);
+      digitalWrite(errorBlinkLed, LOW);
+      delay(500);
+    }
+    
   }
-
   setupI2S();
-
+  Serial.println("SETUP OK");
   digitalWrite(LED_PIN, HIGH);
   delay(500);
   digitalWrite(LED_PIN, LOW);
@@ -76,11 +87,16 @@ void loop() {
   uint8_t recordingLed = LED_PIN;
   recordAudio(rawAudioData, recordingLed, errorBlinkLed);
   get_spectrogram( memory );
-
-  if(memory->smoothedNoiseFloor > 2.2f ){
+  if(memory->smoothedNoiseFloor > 0.4f ){
+    Serial.println("BEFORE RUN CNN");
     runCNN( cnn, errorBlinkLed);
+    Serial.println("AFTER RUN CNN");
     String prediction = getPrediction( kCategoryCount, cnn->probabilities, kCategoryLabels);
+    Serial.println("AFTER PREDICT");
     Serial.printf("Prediction: %s\n", prediction);
+  } else
+  {
+    Serial.printf("Noise: %f\n", memory->smoothedNoiseFloor);
   }
 
 }

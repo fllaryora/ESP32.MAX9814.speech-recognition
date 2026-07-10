@@ -20,14 +20,14 @@ struct ConvNeurNetwork {
   uint8_t* probabilities;
    //TfLiteTensor* output = interpreter->output(0);
   // Array for storing the model’s input, output and intermediate tensors.
-  static uint8_t *tensor_arena; //100 *1024
+  uint8_t *tensor_arena; //100 *1024
   tflite::ErrorReporter* error_reporter;
 };
 
 
 
 void setupCNN(ConvNeurNetwork* cnn, uint8_t errorBlinkLed) {
- 
+  //static variables are not deleted after go out from the function
   static tflite::MicroErrorReporter micro_error_reporter;
 
   cnn->model = tflite::GetModel(model_TFLite);
@@ -46,6 +46,7 @@ void setupCNN(ConvNeurNetwork* cnn, uint8_t errorBlinkLed) {
     }
   }
 
+  //static variables are not deleted after go out from the function
   //store 9 operations at compile time
   static tflite::MicroMutableOpResolver<9> micro_op_resolver;
   micro_op_resolver.AddAveragePool2D();
@@ -58,6 +59,7 @@ void setupCNN(ConvNeurNetwork* cnn, uint8_t errorBlinkLed) {
   micro_op_resolver.AddQuantize();
   micro_op_resolver.AddDequantize();
 
+  //static variables are not deleted after go out from the function
   static tflite::MicroInterpreter static_interpreter(	cnn->model, micro_op_resolver, cnn->tensor_arena, TENSOR_ARENA_SIZE);
 
   cnn->interpreter = &static_interpreter;

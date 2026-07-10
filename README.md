@@ -36,7 +36,7 @@ Use 5Augmentation to create wavs with noise.
 ## 7Machinne Learning with tensor flow lite Folder
 From dataset wavs it create the model.cc file which is necesary to have it in the ESP32.
 ---
-
+## 8Egg2 Does not work because the CNN model is too huge for the ram of ESP32.
 ## https://github.com/tensorflow/tflite-micro
 
 
