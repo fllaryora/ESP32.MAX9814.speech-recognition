@@ -68,23 +68,45 @@ def save_wav(filename, audio, sample_rate):
 # AUGMENTATIONS
 # --------------------------------------------------
 
+#def time_shift(audio, sr):
+#
+#    max_shift = int(sr * 0.15)
+#
+#    shift = np.random.randint(
+#        -max_shift,
+#        max_shift + 1
+#    )
+#
+#    return np.roll(audio, shift)
+
+
 def time_shift(audio, sr):
 
     max_shift = int(sr * 0.15)
 
-    shift = np.random.randint(
-        -max_shift,
-        max_shift + 1
-    )
+    shift = np.random.randint(-max_shift,
+                              max_shift + 1)
 
-    return np.roll(audio, shift)
+    result = np.zeros_like(audio)
 
+    if shift > 0:
+        result[shift:] = audio[:-shift]
+    elif shift < 0:
+        result[:shift] = audio[-shift:]
+    else:
+        result = audio.copy()
+
+    return result
 
 def white_noise(audio):
 
+    #intensity = np.random.uniform(
+    #    0.002,
+    #    0.03
+    #)
     intensity = np.random.uniform(
-        0.002,
-        0.03
+        0.001,
+        0.05
     )
 
     noise = np.random.normal(
@@ -215,16 +237,16 @@ def augment(audio, sr):
     if random.random() < 0.8:
         result = background_noise(result)
 
-    if random.random() < 0.7:
-        result = random_gain(result)
+    #if random.random() < 0.7:
+    #    result = random_gain(result)
 
     if random.random() < 0.3:
         result = time_mask(result)
 
-    peak = np.max(np.abs(result))
+    #peak = np.max(np.abs(result))
 
-    if peak > 0:
-        result = result / peak
+    #if peak > 0:
+    #    result = result / peak
 
     return np.clip(
         result,
