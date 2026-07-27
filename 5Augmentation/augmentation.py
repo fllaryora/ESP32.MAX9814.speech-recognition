@@ -10,6 +10,10 @@ import numpy as np
 # --------------------------------------------------
 # WAV I/O
 # --------------------------------------------------
+def crop_wav(audio, sample_rate, duration_sec=1.5):
+    samples = int(sample_rate * duration_sec)
+    return audio[:samples]
+
 
 def load_wav(filename):
 
@@ -23,26 +27,16 @@ def load_wav(filename):
         raw = wav.readframes(frames)
 
     if sample_width != 2:
-        raise ValueError(
-            f"Solo soporta WAV PCM 16 bits: {filename}"
-        )
+        raise ValueError(f"Solo soporta WAV PCM 16 bits: {filename}")
 
-    audio = np.frombuffer(
-        raw,
-        dtype=np.int16
-    ).astype(np.float32)
+    audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32)
 
     if channels > 1:
         audio = audio.reshape(-1, channels)
         audio = np.mean(audio, axis=1)
-
+    #32768 y 32767 son valores maximos y minimos de la onda.
     audio = audio / 32768.0
-
     audio = audio - np.mean(audio)
-
-    peak = np.max(np.abs(audio))
-    if peak > 0:
-        audio = audio / peak
 
     return audio, sample_rate
 
@@ -59,9 +53,7 @@ def save_wav(filename, audio, sample_rate):
         wav.setsampwidth(2)
         wav.setframerate(sample_rate)
 
-        wav.writeframes(
-            pcm.tobytes()
-        )
+        wav.writeframes(pcm.tobytes())
 
 
 # --------------------------------------------------
@@ -70,52 +62,67 @@ def save_wav(filename, audio, sample_rate):
 
 #def time_shift(audio, sr):
 #
-#    max_shift = int(sr * 0.15)
+#   max_shift = int(sr * 0.15)
 #
-#    shift = np.random.randint(
-#        -max_shift,
-#        max_shift + 1
-#    )
+#   shift = np.random.randint(
+#       -max_shift,
+#       max_shift + 1
+#   )
 #
-#    return np.roll(audio, shift)
+#   return np.roll(audio, shift)
 
 
-def time_shift(audio, sr):
+def fit_length(audio, target_len):
 
-    max_shift = int(sr * 0.15)
+    if len(audio) > target_len:
+        return audio[:target_len]
 
-    shift = np.random.randint(-max_shift,
-                              max_shift + 1)
+    if len(audio) < target_len:
+        return np.pad(audio, (0, target_len - len(audio)))
 
-    result = np.zeros_like(audio)
+    return audio
 
-    if shift > 0:
-        result[shift:] = audio[:-shift]
-    elif shift < 0:
-        result[:shift] = audio[-shift:]
-    else:
-        result = audio.copy()
 
-    return result
+def time_stretch(audio):
+
+    factor = np.random.uniform(0.90, 1.10)
+
+    x_old = np.arange(len(audio))
+    x_new = np.linspace(0, len(audio) - 1, int(len(audio) / factor))
+
+    result = np.interp(x_new, x_old, audio)
+
+    return fit_length(result, len(audio))
+
+
+def pitch_scale(audio):
+
+    factor = np.random.uniform(0.95, 1.05)
+
+    x_old = np.arange(len(audio))
+    x_new = np.linspace(0, len(audio) - 1, int(len(audio) / factor))
+
+    result = np.interp(x_new, x_old, audio)
+
+    return fit_length(result, len(audio))
+
+
+def add_noise_snr(audio, snr_db):
+
+    signal_power = np.mean(audio ** 2)
+
+    noise_power = signal_power / (10 ** (snr_db / 10))
+
+    noise = np.random.normal(0, np.sqrt(noise_power), len(audio))
+
+    return audio + noise
+
 
 def white_noise(audio):
 
-    #intensity = np.random.uniform(
-    #    0.002,
-    #    0.03
-    #)
-    intensity = np.random.uniform(
-        0.001,
-        0.05
-    )
+    snr_db = np.random.uniform(18, 35)
 
-    noise = np.random.normal(
-        0,
-        intensity,
-        len(audio)
-    )
-
-    return audio + noise
+    return add_noise_snr(audio, snr_db)
 
 
 def pink_noise(audio):
@@ -124,28 +131,23 @@ def pink_noise(audio):
 
     fft = np.fft.rfft(white)
 
-    freqs = np.arange(
-        1,
-        len(fft) + 1
-    )
+    freqs = np.arange(1, len(fft) + 1)
 
     fft = fft / np.sqrt(freqs)
 
-    pink = np.fft.irfft(
-        fft,
-        n=len(audio)
-    )
+    pink = np.fft.irfft(fft, n=len(audio))
 
-    pink /= (
-        np.max(np.abs(pink)) + 1e-8
-    )
+    pink /= np.max(np.abs(pink)) + 1e-8
 
-    intensity = np.random.uniform(
-        0.002,
-        0.03
-    )
+    snr_db = np.random.uniform(18, 35)
 
-    return audio + pink * intensity
+    signal_power = np.mean(audio ** 2)
+
+    noise_power = signal_power / (10 ** (snr_db / 10))
+
+    pink *= np.sqrt(noise_power / (np.mean(pink ** 2) + 1e-8))
+
+    return audio + pink
 
 
 def brown_noise(audio):
@@ -154,28 +156,23 @@ def brown_noise(audio):
 
     fft = np.fft.rfft(white)
 
-    freqs = np.arange(
-        1,
-        len(fft) + 1
-    )
+    freqs = np.arange(1, len(fft) + 1)
 
     fft = fft / freqs
 
-    brown = np.fft.irfft(
-        fft,
-        n=len(audio)
-    )
+    brown = np.fft.irfft(fft, n=len(audio))
 
-    brown /= (
-        np.max(np.abs(brown)) + 1e-8
-    )
+    brown /= np.max(np.abs(brown)) + 1e-8
 
-    intensity = np.random.uniform(
-        0.002,
-        0.03
-    )
+    snr_db = np.random.uniform(18, 35)
 
-    return audio + brown * intensity
+    signal_power = np.mean(audio ** 2)
+
+    noise_power = signal_power / (10 ** (snr_db / 10))
+
+    brown *= np.sqrt(noise_power / (np.mean(brown ** 2) + 1e-8))
+
+    return audio + brown
 
 
 def background_noise(audio):
@@ -191,10 +188,7 @@ def background_noise(audio):
 
 def random_gain(audio):
 
-    gain_db = np.random.uniform(
-        -5,
-        5
-    )
+    gain_db = np.random.uniform(-2.0, 0.0)
 
     factor = 10 ** (gain_db / 20)
 
@@ -203,18 +197,12 @@ def random_gain(audio):
 
 def time_mask(audio):
 
-    size = np.random.randint(
-        0,
-        len(audio) // 12
-    )
+    size = np.random.randint(0, len(audio) // 12)
 
     if size <= 0:
         return audio
 
-    start = np.random.randint(
-        0,
-        len(audio) - size
-    )
+    start = np.random.randint(0, len(audio) - size)
 
     result = audio.copy()
 
@@ -231,28 +219,30 @@ def augment(audio, sr):
 
     result = audio.copy()
 
-    if random.random() < 0.9:
-        result = time_shift(result, sr)
+    #if random.random() < 0.9:
+    #   result = time_shift(result, sr)
+
+    if random.random() < 0.4:
+        result = time_stretch(result)
+
+    if random.random() < 0.4:
+        result = pitch_scale(result)
 
     if random.random() < 0.8:
         result = background_noise(result)
 
-    #if random.random() < 0.7:
-    #    result = random_gain(result)
+    if random.random() < 0.5:
+        result = random_gain(result)
 
     if random.random() < 0.3:
         result = time_mask(result)
 
-    #peak = np.max(np.abs(result))
+    peak = np.max(np.abs(result))
 
-    #if peak > 0:
-    #    result = result / peak
+    if peak > 0.55:
+        result = result * (0.55 / peak)
 
-    return np.clip(
-        result,
-        -1.0,
-        1.0
-    )
+    return np.clip(result, -1.0, 1.0)
 
 
 # --------------------------------------------------
@@ -263,30 +253,25 @@ def process_file(path):
 
     print(f"Procesando {path}")
 
-    audio, sr = load_wav(path)
+    audio, sample_rate = load_wav(path)
+    audio = crop_wav(audio, sample_rate, duration_sec=1.5)
 
     base, ext = os.path.splitext(path)
 
+   
+
     for idx in range(1, 4):
 
-        aug_audio = augment(
-            audio,
-            sr
-        )
+        aug_audio = augment(audio, sample_rate)
 
-        output = (
-            f"{base}_aug{idx}.wav"
-        )
+        output = f"{base}_aug{idx}.wav"
 
-        save_wav(
-            output,
-            aug_audio,
-            sr
-        )
+        save_wav(output, aug_audio, sample_rate)
 
-        print(
-            f"   -> {output}"
-        )
+        print(f"   -> {output}")
+    if "BASURA" in base.upper():
+        output = f"{path}"
+        save_wav(output, aug_audio, sample_rate)
 
 
 # --------------------------------------------------
@@ -305,9 +290,7 @@ def process_folder(root_folder):
             if "_aug" in file:
                 continue
 
-            process_file(
-                os.path.join(root, file)
-            )
+            process_file(os.path.join(root, file))
 
 
 # --------------------------------------------------
@@ -321,3 +304,4 @@ if __name__ == "__main__":
     process_folder(DATASET_DIR)
 
     print("\nFinalizado.")
+
