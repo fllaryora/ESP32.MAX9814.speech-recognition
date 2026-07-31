@@ -38,14 +38,23 @@ VANILLA_WIDTH_BETWEEN_BINS = SAMPLE_RATE / SAMPLES_FOR_FFT
  # 202.8588
 MEL_WIDTH_BETWEEN_BINS = (MAX_MEL_FRECUENCY - MIN_MEL_FRECUENCY) / (MEL_DOTS + 1)
 
+#--------
+# It returns the mel frecuency from the filter number
+#----
 def get_mel_frecuency_from_filter_number(mel_filter_bank_number):
     return MIN_MEL_FRECUENCY + mel_filter_bank_number * MEL_WIDTH_BETWEEN_BINS
 
+#------
+# It return the bin index from the filter number
+#---
 def get_bound_from_filter_number(mel_filter_bank_number):
     mel_frecuency =  get_mel_frecuency_from_filter_number(mel_filter_bank_number)
     vanilla_frecuency =  get_vanilla_frecuency(mel_frecuency)
     return int(vanilla_frecuency / VANILLA_WIDTH_BETWEEN_BINS)
 
+#------
+# It returns the left, center and right bounds of the filter bank index
+#---
 def get_mel_filter_bank_bounds(mel_filter_bank_number):
     # TODO: verify mel filter bank indexing / MFCC convention against the ESP32 path
     # Triangular mel filter: left and right are the centers of the neighbors.
@@ -55,6 +64,9 @@ def get_mel_filter_bank_bounds(mel_filter_bank_number):
     return (left, center, right)
 
 
+#-----
+# It returns the triangular filter weight for the bin number in the mel spectrogram
+#----
 def triangular_filter_H(bin_number_in_mel_spectrogram, left, center, right):
     # H(k): triangular weight for FFT bin k given filter bank bounds (bin indices).
     if bin_number_in_mel_spectrogram < left or bin_number_in_mel_spectrogram > right:
@@ -66,9 +78,12 @@ def triangular_filter_H(bin_number_in_mel_spectrogram, left, center, right):
     return (right - bin_number_in_mel_spectrogram) / (right - center)
 
 
+#------
+# It builds the mel filter bank matrix
+#---
 def build_mel_filter_bank_matrix(n_freq_bins):
     # (n_freq_bins, MEL_DOTS) — used as spectrogram @ filter_bank (BLAS / C under NumPy)
-    filter_bank = np.zeros((n_freq_bins, MEL_DOTS), dtype=np.float64)
+    filter_bank = np.zeros((n_freq_bins, MEL_DOTS), dtype=np.float32)
     for mel_filter_bank_number in range(MEL_DOTS):
         left, center, right = get_mel_filter_bank_bounds(mel_filter_bank_number)
         for bin_number in range(left, right + 1):
@@ -77,6 +92,40 @@ def build_mel_filter_bank_matrix(n_freq_bins):
                     bin_number, left, center, right
                 )
     return filter_bank
+
+
+def discrete_cosine_transformation_type_2(mel_spectrogram):
+    # DCT-II along the mel axis (axis=1), one transform per time frame.
+    # Input:  (n_frames, N)  e.g. mel_spectrogram from spectrogram @ mel_filter_bank
+    # Output: (n_frames, N)  MFCC-style coefficients
+    #
+    # Unnormalized DCT-II:
+    #   X[k] = sum_{n=0}^{N-1} x[n] * cos(pi * (n + 0.5) * k / N)
+    #
+    n_frames, n_samples = mel_spectrogram.shape
+
+    # --- Explicit / C++-friendly version (kept for porting) ---
+    #for (int frame = 0; frame < n_frames; ++frame) {
+    #   for (int sample_index_k = 0; sample_index_k < n_samples; ++sample_index_k) {
+    #     float acc = 0.0f;
+    #     for (int sample_index_n = 0; sample_index_n < n_samples; ++sample_index_n) {
+    #       acc += mel[frame][sample_index_n] * cosf(PI * (sample_index_n + 0.5f) * sample_index_k / n_samples);
+    #     }
+    #     out[frame][sample_index_k] = acc;
+    #   }
+    # }
+    # return out
+
+    # Fast path: DCT-II basis matrix, then one matmul (NumPy -> BLAS/C)
+    # dct_matrix[k, n] = cos(pi * (n + 0.5) * k / N)
+    n = np.arange(n_samples, dtype=np.float32)
+    k = np.arange(n_samples, dtype=np.float32)
+    dct_matrix = np.cos(np.pi * np.outer(k, n + 0.5) / n_samples)
+    dct_II = mel_spectrogram @ dct_matrix.T
+
+    print("DCT-II shape:", dct_II.shape)
+    #DCT-II shape: (149, 13)
+    return dct_II
 
 
 # ----------------------------------------------------------
@@ -134,7 +183,9 @@ def get_spectrogram_original(audio):
     print("STFT shape:", spectrogram.shape)
     spectrogram = spectrogram.numpy()
     spectrogram = np.log10(spectrogram + 1e-6)
-    
+    return spectrogram
+
+def get_mel_spectrogram_from_vanilla(spectrogram):    
     number_of_frames_inSpectrum = spectrogram.shape[0]
     n_freq_bins = spectrogram.shape[1]
     # apply mel scalling
@@ -161,14 +212,20 @@ def get_spectrogram_original(audio):
     # Comments say up to right-1 inclusive -> range(left+1, right). Fast path uses full H.
     mel_filter_bank = build_mel_filter_bank_matrix(n_freq_bins)
     mel_spectrogram = spectrogram @ mel_filter_bank
+
     return mel_spectrogram
+
+def get_mfcc_from_mel_spectrogram(mel_spectrogram):   
+    #sometime the mfcc coeficients are (12 -13) the others are deleted.
+    mfcc = discrete_cosine_transformation_type_2(mel_spectrogram)
+    return mfcc
 
 # ----------------------------------------------------------
 # TF SPECTROGRAM FROM WAV
 # ----------------------------------------------------------
 
 
-def create_tf_spectrogram(wav_filename, png_filename, save_plot=False):
+def create_tf_vanilla_spectrogram(wav_filename, png_filename, save_plot=False):
 
     audio = get_normalized_pcm(wav_filename)
     spectrogram = get_spectrogram_original(audio)
@@ -203,6 +260,73 @@ def create_tf_spectrogram(wav_filename, png_filename, save_plot=False):
 
     return spectrogram
 
+def create_tf_mel_spectrogram(spectrogram, png_filename, save_plot=False):
+
+    mel_spectrogram = get_mel_spectrogram_from_vanilla(spectrogram)
+    plt.figure(figsize=(12, 4))
+
+    # uncomment only for debugging
+    # print(f"TF Shape: {spectrogram.shape}, Min: {np.min(spectrogram)}, Max: {np.max(spectrogram)}, Mean: {np.mean(spectrogram)} , Std: {np.std(spectrogram)}")
+
+    if save_plot == True:
+        plt.imshow(
+            mel_spectrogram.T,
+            aspect="auto",
+            origin="lower",
+            cmap="viridis"
+        )
+
+        plt.title(
+            "TensorFlow Mel Spectrogram"
+        )
+
+        plt.xlabel("Time frames")
+        plt.ylabel("Mel Frequency bins")
+        plt.colorbar(label="Mel Scale Magnitude")
+        plt.tight_layout()
+
+        plt.savefig(
+            png_filename,
+            dpi=300
+        )
+
+        plt.close()
+
+    return mel_spectrogram
+
+def create_tf_mfcc(mel_spectrogram, png_filename, save_plot=False):
+
+    mfcc_coeficients = get_mfcc_from_mel_spectrogram(mel_spectrogram)
+    plt.figure(figsize=(12, 4))
+
+    # uncomment only for debugging
+    # print(f"TF Shape: {spectrogram.shape}, Min: {np.min(spectrogram)}, Max: {np.max(spectrogram)}, Mean: {np.mean(spectrogram)} , Std: {np.std(spectrogram)}")
+
+    if save_plot == True:
+        plt.imshow(
+            mfcc_coeficients.T,
+            aspect="auto",
+            origin="lower",
+            cmap="viridis"
+        )
+
+        plt.title(
+            "TensorFlow MFCC"
+        )
+
+        plt.xlabel("Time frames")
+        plt.ylabel("MFCC Coefficients")
+        plt.colorbar(label="MFCC Magnitude")
+        plt.tight_layout()
+
+        plt.savefig(
+            png_filename,
+            dpi=300
+        )
+
+        plt.close()
+
+    return mel_spectrogram
 # --------------------------------------------------
 # WAV I/O
 # --------------------------------------------------
@@ -448,8 +572,13 @@ def process_wav_file(path):
         aug_audio = augment(audio, sample_rate, idx)
         output_wav_filename = f"{base}_aug{idx}.wav"
         save_wav(output_wav_filename, aug_audio, sample_rate)
-        png_filename = f"{base}_aug{idx}_tf.png"
-        spectogram = create_tf_spectrogram(output_wav_filename, png_filename, True)
+        png_filename = f"{base}_aug{idx}_tf_vanilla.png"
+        mel_png_filename = f"{base}_aug{idx}_tf_mel.png"
+        mfcc_png_filename = f"{base}_aug{idx}_tf_mfcc.png"
+        spectogram = create_tf_vanilla_spectrogram(output_wav_filename, png_filename, True)
+        mel_spectogram = create_tf_mel_spectrogram(spectogram, mel_png_filename, True)
+        mfcc =  create_tf_mfcc(mel_spectogram, mfcc_png_filename, True)
+
         print(f"   -> {output_wav_filename}")
 
 
@@ -481,6 +610,6 @@ if __name__ == "__main__":
     DATASET_DIR = "./DATASET"
 
     #process_folder(DATASET_DIR)
-    process_wav_file("../DATASET/SI/SI_20.wav")
+    process_wav_file("../DATASET/SI/SI_10.wav")
     
     print("\nFinished.")
