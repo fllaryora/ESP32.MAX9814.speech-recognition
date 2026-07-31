@@ -66,6 +66,18 @@ def triangular_filter_H(bin_number_in_mel_spectrogram, left, center, right):
     return (right - bin_number_in_mel_spectrogram) / (right - center)
 
 
+def build_mel_filter_bank_matrix(n_freq_bins):
+    # (n_freq_bins, MEL_DOTS) — used as spectrogram @ filter_bank (BLAS / C under NumPy)
+    filter_bank = np.zeros((n_freq_bins, MEL_DOTS), dtype=np.float64)
+    for mel_filter_bank_number in range(MEL_DOTS):
+        left, center, right = get_mel_filter_bank_bounds(mel_filter_bank_number)
+        for bin_number in range(left, right + 1):
+            if 0 <= bin_number < n_freq_bins:
+                filter_bank[bin_number, mel_filter_bank_number] = triangular_filter_H(
+                    bin_number, left, center, right
+                )
+    return filter_bank
+
 
 # ----------------------------------------------------------
 # GET NORMALIZED PCM
@@ -124,21 +136,31 @@ def get_spectrogram_original(audio):
     spectrogram = np.log10(spectrogram + 1e-6)
     
     number_of_frames_inSpectrum = spectrogram.shape[0]
+    n_freq_bins = spectrogram.shape[1]
     # apply mel scalling
     mel_spectrogram = np.zeros((number_of_frames_inSpectrum, MEL_DOTS))
     print("Mel spectrogram shape:", mel_spectrogram.shape)
 
-    # from 0 to 148
-    for frame_number in range(number_of_frames_inSpectrum):
-        # from 0 to 12
-        for mel_filter_bank_number in range(MEL_DOTS):
-            # from (0, 2, 6) to (107, 131, 160)
-            left, center, right = get_mel_filter_bank_bounds(mel_filter_bank_number)
-            # from (1, to 5) to (108, 131, 159)
-            for bin_number_in_mel_spectrogram in range(left+1, right-1):
-                # mel filter bank
-                filter_weight = triangular_filter_H(bin_number_in_mel_spectrogram, left, center, right)
-                mel_spectrogram[frame_number, mel_filter_bank_number] += spectrogram[frame_number, bin_number_in_mel_spectrogram] * filter_weight
+    # --- Explicit / C++-friendly version (kept for porting) ---
+    # # from 0 to 148
+    # for frame_number in range(number_of_frames_inSpectrum):
+    #     # from 0 to 12
+    #     for mel_filter_bank_number in range(MEL_DOTS):
+    #         # from (0, 2, 6) to (107, 131, 160)
+    #         left, center, right = get_mel_filter_bank_bounds(mel_filter_bank_number)
+    #         # from (1, to 5) to (108, 131, 159)
+    #         for bin_number_in_mel_spectrogram in range(left+1, right-1):
+    #             # mel filter bank
+    #             filter_weight = triangular_filter_H(bin_number_in_mel_spectrogram, left, center, right)
+    #             mel_spectrogram[frame_number, mel_filter_bank_number] += spectrogram[frame_number, bin_number_in_mel_spectrogram] * filter_weight
+    # return mel_spectrogram
+
+    # Fast path: prebuild H(k) matrix, then one matmul (NumPy -> BLAS/C)
+    # Note: H(left)=H(right)=0, so endpoints do not change the sum.
+    # Your loop used range(left+1, right-1); that skips bin right-1.
+    # Comments say up to right-1 inclusive -> range(left+1, right). Fast path uses full H.
+    mel_filter_bank = build_mel_filter_bank_matrix(n_freq_bins)
+    mel_spectrogram = spectrogram @ mel_filter_bank
     return mel_spectrogram
 
 # ----------------------------------------------------------
@@ -459,6 +481,6 @@ if __name__ == "__main__":
     DATASET_DIR = "./DATASET"
 
     #process_folder(DATASET_DIR)
-    process_wav_file("../DATASET/SI/SI_10.wav")
+    process_wav_file("../DATASET/SI/SI_20.wav")
     
     print("\nFinished.")
