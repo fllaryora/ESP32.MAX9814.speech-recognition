@@ -55,6 +55,17 @@ def get_mel_filter_bank_bounds(mel_filter_bank_number):
     return (left, center, right)
 
 
+def triangular_filter_H(bin_number_in_mel_spectrogram, left, center, right):
+    # H(k): triangular weight for FFT bin k given filter bank bounds (bin indices).
+    if bin_number_in_mel_spectrogram < left or bin_number_in_mel_spectrogram > right:
+        return 0.0
+    # increasing    
+    if bin_number_in_mel_spectrogram <= center:
+        return (bin_number_in_mel_spectrogram - left) / (center - left)
+    # decreasing
+    return (right - bin_number_in_mel_spectrogram) / (right - center)
+
+
 # ----------------------------------------------------------
 # GET NORMALIZED PCM
 # ----------------------------------------------------------
@@ -110,21 +121,17 @@ def get_spectrogram_original(audio):
     spectrogram = spectrogram.numpy()
     spectrogram = np.log10(spectrogram + 1e-6)
     
+    # apply mel filter bank
+    mel_spectrogram = np.zeros((MEL_DOTS, spectrogram.shape[1]))
+    for mel_filter_bank_number in range(MEL_DOTS):
+        left, center, right = get_mel_filter_bank_bounds(mel_filter_bank_number)
+        for bin_number_in_mel_spectrogram in range(left, right + 1):
+            mel_spectrogram[mel_filter_bank_number, :] += (
+                spectrogram[bin_number_in_mel_spectrogram, :]
+                * triangular_filter_H(bin_number_in_mel_spectrogram, left, center, right)
+            )
+    spectrogram = mel_spectrogram
 
-    #pooled = []
-
-    #for i in range(41):
-
-    #    start = i * 4
-    #    end = min(start + 4, spectrogram.shape[1])
-    #    pooled.append(
-    #        np.mean(spectrogram[:, start:end], axis=1)
-    #    )
-
-    #spectrogram = np.stack(pooled, axis=1)
-
-    # addition to epsilon to avoid log10(0)
-    #spectrogram = np.log10(spectrogram + 1e-6)
 
     print("Pooled shape:", spectrogram.shape)
 
@@ -448,7 +455,6 @@ if __name__ == "__main__":
     DATASET_DIR = "./DATASET"
 
     #process_folder(DATASET_DIR)
-    for mel_filter_bank_number in range(0, 13):
-        print(get_mel_filter_bank_bounds(mel_filter_bank_number))
-
+    process_wav_file("../DATASET/SI/SI_10.wav")
+    
     print("\nFinished.")
