@@ -9,10 +9,55 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow.python.ops import gen_audio_ops as audio_ops
 
+
+# ----------------------------------------------------------
+# GLOBAL VARIABLES
+# ----------------------------------------------------------
+
+DATASET_DIR = "./DATASET"
+SAMPLE_RATE = 16000
+MIN_FRECUENCY = 0
+MAX_FRECUENCY = 8000
+SAMPLES_FOR_FFT = 320
+FRAME_STEP = 160 # next frame is 160 samples after the previous one
+DURATION_SEC = 1.5
+MEL_DOTS = 13
+
+def get_mel_frecuency(vanilla_frecuency):
+    return 2595 * np.log10(1 + (vanilla_frecuency) / 700)  # Convert Hz to Mel
+
+def get_vanilla_frecuency(mel_frecuency):
+    return 700 * (10 ** (mel_frecuency / 2595) - 1)  # Convert Mel to Hz
+
+# 0
+MIN_MEL_FRECUENCY = get_vanilla_frecuency(MIN_FRECUENCY)
+# 2840.023047
+MAX_MEL_FRECUENCY = get_mel_frecuency(MAX_FRECUENCY)
+ #50
+VANILLA_WIDTH_BETWEEN_BINS = SAMPLE_RATE / SAMPLES_FOR_FFT
+ # 202.8588
+MEL_WIDTH_BETWEEN_BINS = (MAX_MEL_FRECUENCY - MIN_MEL_FRECUENCY) / (MEL_DOTS + 1)
+
+def get_mel_frecuency_from_filter_number(mel_filter_bank_number):
+    return MIN_MEL_FRECUENCY + mel_filter_bank_number * MEL_WIDTH_BETWEEN_BINS
+
+def get_bound_from_filter_number(mel_filter_bank_number):
+    mel_frecuency =  get_mel_frecuency_from_filter_number(mel_filter_bank_number)
+    vanilla_frecuency =  get_vanilla_frecuency(mel_frecuency)
+    return int(vanilla_frecuency / VANILLA_WIDTH_BETWEEN_BINS)
+
+def get_mel_filter_bank_bounds(mel_filter_bank_number):
+    # TODO: verify mel filter bank indexing / MFCC convention against the ESP32 path
+    # Triangular mel filter: left and right are the centers of the neighbors.
+    left = get_bound_from_filter_number(mel_filter_bank_number)
+    center = get_bound_from_filter_number(mel_filter_bank_number + 1 )
+    right = get_bound_from_filter_number(mel_filter_bank_number + 2)
+    return (left, center, right)
+
+
 # ----------------------------------------------------------
 # GET NORMALIZED PCM
 # ----------------------------------------------------------
-
 
 def get_normalized_pcm(wav_filename):
 
@@ -53,9 +98,9 @@ def get_spectrogram_original(audio):
     # FFT of exactly 320 points
     stft = tf.signal.stft(
         audio,
-        frame_length=320,
-        frame_step=160,
-        fft_length=320,
+        frame_length=SAMPLES_FOR_FFT,
+        frame_step=FRAME_STEP,
+        fft_length=SAMPLES_FOR_FFT,
         window_fn=tf.signal.hann_window
     )
 
@@ -63,20 +108,23 @@ def get_spectrogram_original(audio):
     spectrogram = tf.abs(stft) ** 2
     print("STFT shape:", spectrogram.shape)
     spectrogram = spectrogram.numpy()
-    pooled = []
+    spectrogram = np.log10(spectrogram + 1e-6)
+    
 
-    for i in range(41):
+    #pooled = []
 
-        start = i * 4
-        end = min(start + 4, spectrogram.shape[1])
-        pooled.append(
-            np.mean(spectrogram[:, start:end], axis=1)
-        )
+    #for i in range(41):
 
-    spectrogram = np.stack(pooled, axis=1)
+    #    start = i * 4
+    #    end = min(start + 4, spectrogram.shape[1])
+    #    pooled.append(
+    #        np.mean(spectrogram[:, start:end], axis=1)
+    #    )
+
+    #spectrogram = np.stack(pooled, axis=1)
 
     # addition to epsilon to avoid log10(0)
-    spectrogram = np.log10(spectrogram + 1e-6)
+    #spectrogram = np.log10(spectrogram + 1e-6)
 
     print("Pooled shape:", spectrogram.shape)
 
@@ -127,7 +175,7 @@ def create_tf_spectrogram(wav_filename, png_filename, save_plot=False):
 # --------------------------------------------------
 
 
-def crop_wav(audio, sample_rate, duration_sec=1.5):
+def crop_wav(audio, sample_rate, duration_sec=DURATION_SEC):
     samples = int(sample_rate * duration_sec)
     return audio[:samples]
 
@@ -360,7 +408,7 @@ def process_wav_file(path):
     print(f"Processing {path}")
 
     audio, sample_rate = load_wav(path)
-    audio = crop_wav(audio, sample_rate, duration_sec=1.5)
+    audio = crop_wav(audio, sample_rate, duration_sec=DURATION_SEC)
     base, ext = os.path.splitext(path)
 
     for idx in range(0, 33):
@@ -399,6 +447,8 @@ if __name__ == "__main__":
 
     DATASET_DIR = "./DATASET"
 
-    process_folder(DATASET_DIR)
+    #process_folder(DATASET_DIR)
+    for mel_filter_bank_number in range(0, 13):
+        print(get_mel_filter_bank_bounds(mel_filter_bank_number))
 
     print("\nFinished.")
