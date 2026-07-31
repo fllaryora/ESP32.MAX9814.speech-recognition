@@ -5,6 +5,122 @@ import random
 import wave
 
 import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow.python.ops import gen_audio_ops as audio_ops
+
+# ----------------------------------------------------------
+# GET NORMALIZED PCM
+# ----------------------------------------------------------
+
+
+def get_normalized_pcm(wav_filename):
+
+    try:
+        # Load audio file
+        audio_binary = tf.io.read_file(wav_filename)
+        audio, sample_rate = tf.audio.decode_wav(audio_binary, desired_channels=1)
+
+        # Remove channel dimension: (samples, 1) -> (samples,)
+        audio = tf.squeeze(audio, axis=-1)
+        audio = tf.cast(audio, tf.float32)
+        audio = audio.numpy()
+
+        return audio
+
+    except Exception as e:
+        raise RuntimeError(f"   ✗ Error loading {file_name}: {e}")
+
+
+# ----------------------------------------------------------
+# get_spectrogram_original As Known As RUSSIAN NOTEBOOK FUNCTION
+# This function is a adapted version from
+# https://github.com/DenissStepanjuk/ESP32.INMP441.speech-recognition/blob/main/Python_INMP441/INMP441-CNN-TFL.ipynb
+# This function is not the Most efficient python function to get the spectogram
+# it repeats the same calculation that the ESP32 does in the hardware
+# ----------------------------------------------------------
+
+def get_spectrogram_original(audio):
+
+    # same normalization as ESP32
+    audio = audio - np.mean(audio)
+    max_val = np.max(np.abs(audio))
+    if max_val < 1e-6:
+        max_val = 1.0
+
+    audio = audio / max_val
+
+    # FFT of exactly 320 points
+    stft = tf.signal.stft(
+        audio,
+        frame_length=320,
+        frame_step=160,
+        fft_length=320,
+        window_fn=tf.signal.hann_window
+    )
+
+    # square of modulus
+    spectrogram = tf.abs(stft) ** 2
+    print("STFT shape:", spectrogram.shape)
+    spectrogram = spectrogram.numpy()
+    pooled = []
+
+    for i in range(41):
+
+        start = i * 4
+        end = min(start + 4, spectrogram.shape[1])
+        pooled.append(
+            np.mean(spectrogram[:, start:end], axis=1)
+        )
+
+    spectrogram = np.stack(pooled, axis=1)
+
+    # addition to epsilon to avoid log10(0)
+    spectrogram = np.log10(spectrogram + 1e-6)
+
+    print("Pooled shape:", spectrogram.shape)
+
+    return spectrogram
+
+# ----------------------------------------------------------
+# TF SPECTROGRAM FROM WAV
+# ----------------------------------------------------------
+
+
+def create_tf_spectrogram(wav_filename, png_filename, save_plot=False):
+
+    audio = get_normalized_pcm(wav_filename)
+    spectrogram = get_spectrogram_original(audio)
+    plt.figure(figsize=(12, 4))
+
+    # uncomment only for debugging
+    # print(f"TF Shape: {spectrogram.shape}, Min: {np.min(spectrogram)}, Max: {np.max(spectrogram)}, Mean: {np.mean(spectrogram)} , Std: {np.std(spectrogram)}")
+
+    if save_plot == True:
+        plt.imshow(
+            spectrogram.T,
+            aspect="auto",
+            origin="lower",
+            cmap="viridis"
+        )
+
+        plt.title(
+            "TensorFlow Spectrogram"
+        )
+
+        plt.xlabel("Time frames")
+        plt.ylabel("Frequency bins")
+        plt.colorbar(label="Log_10 Magnitude")
+        plt.tight_layout()
+
+        plt.savefig(
+            png_filename,
+            dpi=300
+        )
+
+        plt.close()
+
+    return spectrogram
 
 # --------------------------------------------------
 # WAV I/O
@@ -19,15 +135,15 @@ def crop_wav(audio, sample_rate, duration_sec=1.5):
 def load_wav(filename):
 
     with wave.open(filename, "rb") as wav:
+
         sample_rate = wav.getframerate()
         channels = wav.getnchannels()
         sample_width = wav.getsampwidth()
         frames = wav.getnframes()
-
         raw = wav.readframes(frames)
 
     if sample_width != 2:
-        raise ValueError(f"Solo soporta WAV PCM 16 bits: {filename}")
+        raise ValueError(f"Only supports 16-bit PCM WAV: {filename}")
 
     audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32)
 
@@ -44,10 +160,10 @@ def load_wav(filename):
 def save_wav(filename, audio, sample_rate):
 
     audio = np.clip(audio, -1.0, 1.0)
-
     pcm = (audio * 32767).astype(np.int16)
 
     with wave.open(filename, "wb") as wav:
+
         wav.setnchannels(1)
         wav.setsampwidth(2)
         wav.setframerate(sample_rate)
@@ -58,24 +174,25 @@ def save_wav(filename, audio, sample_rate):
 # AUGMENTATIONS
 # --------------------------------------------------
 
+def time_shift_roll(audio, sample_rate, shift_number):
 
-def time_shift(audio, sample_rate):
+    # From -800 ms to +800 ms in 50 ms steps
+    # shift_number=0 -> -800 ms, shift_number=32 -> +800 ms
+    shift_ms = -800 + 50 * shift_number
+    shift = int(sample_rate * shift_ms / 1000.0)
 
-    # Hasta ±250 ms
-    max_shift = int(sample_rate * 0.25)
-
-    shift = np.random.randint(-max_shift, max_shift + 1)
-
-    result = np.zeros_like(audio)
+    result = np.empty_like(audio)
 
     if shift > 0:
-        # Desplaza hacia la derecha
+        # Shift to the right: beginning filled with end of audio
         result[shift:] = audio[:-shift]
+        result[:shift] = audio[-shift:]
 
     elif shift < 0:
-        # Desplaza hacia la izquierda
+        # Shift to the left: ending filled with beginning of audio
         shift = -shift
         result[:-shift] = audio[shift:]
+        result[-shift:] = audio[:shift]
 
     else:
         result[:] = audio
@@ -116,7 +233,7 @@ def pitch_scale(audio):
 
 def add_noise_snr(audio, snr_db):
 
-    signal_power = np.mean(audio**2)
+    signal_power = np.mean(audio ** 2)
     noise_power = signal_power / (10 ** (snr_db / 10))
     noise = np.random.normal(0, np.sqrt(noise_power), len(audio))
 
@@ -139,9 +256,9 @@ def pink_noise(audio):
     pink = np.fft.irfft(fft, n=len(audio))
     pink /= np.max(np.abs(pink)) + 1e-8
     snr_db = np.random.uniform(18, 35)
-    signal_power = np.mean(audio**2)
+    signal_power = np.mean(audio ** 2)
     noise_power = signal_power / (10 ** (snr_db / 10))
-    pink *= np.sqrt(noise_power / (np.mean(pink**2) + 1e-8))
+    pink *= np.sqrt(noise_power / (np.mean(pink ** 2) + 1e-8))
 
     return audio + pink
 
@@ -155,16 +272,20 @@ def brown_noise(audio):
     brown = np.fft.irfft(fft, n=len(audio))
     brown /= np.max(np.abs(brown)) + 1e-8
     snr_db = np.random.uniform(18, 35)
-    signal_power = np.mean(audio**2)
+    signal_power = np.mean(audio ** 2)
     noise_power = signal_power / (10 ** (snr_db / 10))
-    brown *= np.sqrt(noise_power / (np.mean(brown**2) + 1e-8))
+    brown *= np.sqrt(noise_power / (np.mean(brown ** 2) + 1e-8))
 
     return audio + brown
 
 
 def background_noise(audio):
 
-    noise_func = random.choice([white_noise, pink_noise, brown_noise])
+    noise_func = random.choice([
+        white_noise,
+        pink_noise,
+        brown_noise
+    ])
 
     return noise_func(audio)
 
@@ -186,7 +307,7 @@ def time_mask(audio):
 
     start = np.random.randint(0, len(audio) - size)
     result = audio.copy()
-    result[start : start + size] = 0
+    result[start:start + size] = 0
 
     return result
 
@@ -195,18 +316,17 @@ def time_mask(audio):
 # PIPELINE
 # --------------------------------------------------
 
-
-def augment(audio, sample_rate):
+def augment(audio, sample_rate, shift_number):
 
     result = audio.copy()
 
     #
-    # MUY IMPORTANTE:
-    # enseñar a la red que la palabra puede aparecer
-    # en cualquier lugar de la ventana.
+    # VERY IMPORTANT:
+    # teach the network that the word can appear
+    # anywhere in the window.
     #
     if random.random() < 1.0:
-        result = time_shift(result, sample_rate)
+        result = time_shift_roll(result, sample_rate, shift_number)
 
     if random.random() < 0.15:
         result = time_stretch(result)
@@ -226,7 +346,7 @@ def augment(audio, sample_rate):
     peak = np.max(np.abs(result))
 
     if peak > 0.55:
-        result *= 0.55 / peak
+        result *= (0.55 / peak)
 
     return np.clip(result, -1.0, 1.0)
 
@@ -235,37 +355,40 @@ def augment(audio, sample_rate):
 # PROCESS FILE
 # --------------------------------------------------
 
+def process_wav_file(path):
 
-def process_file(path):
+    print(f"Processing {path}")
 
-    print(f"Procesando {path}")
     audio, sample_rate = load_wav(path)
     audio = crop_wav(audio, sample_rate, duration_sec=1.5)
     base, ext = os.path.splitext(path)
 
-    for idx in range(1, 4):
-        aug_audio = augment(audio, sample_rate)
-        output = f"{base}_aug{idx}.wav"
-        save_wav(output, aug_audio, sample_rate)
-        print(f"   -> {output}")
+    for idx in range(0, 33):
+        aug_audio = augment(audio, sample_rate, idx)
+        output_wav_filename = f"{base}_aug{idx}.wav"
+        save_wav(output_wav_filename, aug_audio, sample_rate)
+        png_filename = f"{base}_aug{idx}_tf.png"
+        spectogram = create_tf_spectrogram(output_wav_filename, png_filename, True)
+        print(f"   -> {output_wav_filename}")
 
 
 # --------------------------------------------------
 # PROCESS FOLDER
 # --------------------------------------------------
 
-
 def process_folder(root_folder):
 
     for root, dirs, files in os.walk(root_folder):
+
         for file in files:
+
             if not file.lower().endswith(".wav"):
                 continue
 
             if "_aug" in file:
                 continue
 
-            process_file(os.path.join(root, file))
+            process_wav_file(os.path.join(root, file))
 
 
 # --------------------------------------------------
@@ -273,8 +396,9 @@ def process_folder(root_folder):
 # --------------------------------------------------
 
 if __name__ == "__main__":
+
     DATASET_DIR = "./DATASET"
 
     process_folder(DATASET_DIR)
 
-    print("\nFinalizado.")
+    print("\nFinished.")
