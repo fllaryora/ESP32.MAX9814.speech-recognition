@@ -124,7 +124,7 @@ def get_spectrogram_original(audio):
     spectrogram = np.log10(spectrogram + 1e-6)
     
     number_of_frames_inSpectrum = spectrogram.shape[0]
-    # apply mel filter bank
+    # apply mel scalling
     mel_spectrogram = np.zeros((number_of_frames_inSpectrum, MEL_DOTS))
     print("Mel spectrogram shape:", mel_spectrogram.shape)
 
@@ -136,6 +136,7 @@ def get_spectrogram_original(audio):
             left, center, right = get_mel_filter_bank_bounds(mel_filter_bank_number)
             # from (1, to 5) to (108, 131, 159)
             for bin_number_in_mel_spectrogram in range(left+1, right-1):
+                # mel filter bank
                 filter_weight = triangular_filter_H(bin_number_in_mel_spectrogram, left, center, right)
                 mel_spectrogram[frame_number, mel_filter_bank_number] += spectrogram[frame_number, bin_number_in_mel_spectrogram] * filter_weight
     return mel_spectrogram
