@@ -66,6 +66,7 @@ def triangular_filter_H(bin_number_in_mel_spectrogram, left, center, right):
     return (right - bin_number_in_mel_spectrogram) / (right - center)
 
 
+
 # ----------------------------------------------------------
 # GET NORMALIZED PCM
 # ----------------------------------------------------------
@@ -117,25 +118,27 @@ def get_spectrogram_original(audio):
 
     # square of modulus
     spectrogram = tf.abs(stft) ** 2
+    #STFT shape: (149, 161)
     print("STFT shape:", spectrogram.shape)
     spectrogram = spectrogram.numpy()
     spectrogram = np.log10(spectrogram + 1e-6)
     
+    number_of_frames_inSpectrum = spectrogram.shape[0]
     # apply mel filter bank
-    mel_spectrogram = np.zeros((MEL_DOTS, spectrogram.shape[1]))
-    for mel_filter_bank_number in range(MEL_DOTS):
-        left, center, right = get_mel_filter_bank_bounds(mel_filter_bank_number)
-        for bin_number_in_mel_spectrogram in range(left, right + 1):
-            mel_spectrogram[mel_filter_bank_number, :] += (
-                spectrogram[bin_number_in_mel_spectrogram, :]
-                * triangular_filter_H(bin_number_in_mel_spectrogram, left, center, right)
-            )
-    spectrogram = mel_spectrogram
+    mel_spectrogram = np.zeros((number_of_frames_inSpectrum, MEL_DOTS))
+    print("Mel spectrogram shape:", mel_spectrogram.shape)
 
-
-    print("Pooled shape:", spectrogram.shape)
-
-    return spectrogram
+    # from 0 to 148
+    for frame_number in range(number_of_frames_inSpectrum):
+        # from 0 to 12
+        for mel_filter_bank_number in range(MEL_DOTS):
+            # from (0, 2, 6) to (107, 131, 160)
+            left, center, right = get_mel_filter_bank_bounds(mel_filter_bank_number)
+            # from (1, to 5) to (108, 131, 159)
+            for bin_number_in_mel_spectrogram in range(left+1, right-1):
+                filter_weight = triangular_filter_H(bin_number_in_mel_spectrogram, left, center, right)
+                mel_spectrogram[frame_number, mel_filter_bank_number] += spectrogram[frame_number, bin_number_in_mel_spectrogram] * filter_weight
+    return mel_spectrogram
 
 # ----------------------------------------------------------
 # TF SPECTROGRAM FROM WAV
