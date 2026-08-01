@@ -708,11 +708,11 @@ def process_wav_file(path):
         mfcc_png_filename = f"{base}_aug{idx}_tf_mfcc.png"
         cepstrum_png_filename = f"{base}_aug{idx}_tf_cepstrum.png"
         cepstrum_frames_png_filename = f"{base}_aug{idx}_tf_cepstrum_frames.png"
-        spectogram = create_tf_vanilla_spectrogram(output_wav_filename, png_filename, False)
-        mel_spectogram = create_tf_mel_spectrogram(spectogram, mel_png_filename, False)
-        mfcc =  create_tf_mfcc(mel_spectogram, mfcc_png_filename, False)
-        cepstrum = create_tf_cepstrum(mel_spectogram, cepstrum_png_filename, True)
-        create_tf_cepstrum_frames(cepstrum, cepstrum_frames_png_filename, True)
+        spectogram = create_tf_vanilla_spectrogram(output_wav_filename, png_filename, True)
+        mel_spectogram = create_tf_mel_spectrogram(spectogram, mel_png_filename, True)
+        mfcc =  create_tf_mfcc(mel_spectogram, mfcc_png_filename, True)
+        cepstrum = create_tf_cepstrum(mel_spectogram, cepstrum_png_filename, False)
+        create_tf_cepstrum_frames(cepstrum, cepstrum_frames_png_filename, False)
         print(f"   -> {output_wav_filename}")
 
 
