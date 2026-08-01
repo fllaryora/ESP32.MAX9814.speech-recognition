@@ -128,6 +128,33 @@ def discrete_cosine_transformation_type_2(mel_spectrogram):
     return dct_II
 
 
+def inverse_discrete_fourier_transformation(mel_spectrogram):
+    # Real cepstrum: IDFT along the mel axis (axis=1), one transform per time frame.
+    # Input:  (n_frames, N) log-mel (or log spectrum) energies
+    # Output: (n_frames, N) real cepstrum  (= real(IDFT(log-mel)))
+    #
+    # IDFT:
+    #   x[n] = (1/N) * sum_{k=0}^{N-1} X[k] * exp(+j * 2*pi*k*n / N)
+    #
+    n_frames, N = mel_spectrogram.shape
+
+    # --- Explicit / C++-friendly real IDFT (kept for porting) ---
+    # cepstrum = np.zeros((n_frames, N), dtype=np.float32)
+    # for frame_index in range(n_frames):
+    #     for n in range(N):
+    #         acc_re = 0.0
+    #         for k in range(N):
+    #             angle = 2.0 * np.pi * k * n / N
+    #             # real input → use cos term; take real cepstrum
+    #             acc_re += mel_spectrogram[frame_index, k] * np.cos(angle)
+    #         cepstrum[frame_index, n] = acc_re / N
+    # return cepstrum
+
+    # Fast path: NumPy IFFT (C under the hood), keep real part
+    cepstrum = np.fft.ifft(mel_spectrogram, axis=1)
+    return np.real(cepstrum).astype(np.float32)
+
+
 # ----------------------------------------------------------
 # GET NORMALIZED PCM
 # ----------------------------------------------------------
@@ -355,6 +382,42 @@ def create_tf_mfcc(mel_spectrogram, png_filename, save_plot=False):
         plt.close()
 
     return mel_spectrogram
+
+def create_tf_cepstrum(mel_spectrogram, png_filename, save_plot=False):
+
+    capstrum = inverse_discrete_fourier_transformation(mel_spectrogram)
+    plt.figure(figsize=(12, 4))
+
+    # uncomment only for debugging
+    # print(f"TF Shape: {spectrogram.shape}, Min: {np.min(spectrogram)}, Max: {np.max(spectrogram)}, Mean: {np.mean(spectrogram)} , Std: {np.std(spectrogram)}")
+
+    if save_plot == True:
+        plt.imshow(
+            capstrum.T,
+            aspect="auto",
+            origin="lower",
+            cmap="viridis"
+        )
+
+        plt.title(
+            "TensorFlow Cepstrum"
+        )
+
+        plt.xlabel("Time frames")
+        plt.ylabel("QueFrency")
+        plt.colorbar(label="Cepstrum Magnitude")
+        plt.tight_layout()
+
+        plt.savefig(
+            png_filename,
+            dpi=300
+        )
+
+        plt.close()
+
+    return mel_spectrogram
+
+
 # --------------------------------------------------
 # WAV I/O
 # --------------------------------------------------
@@ -603,10 +666,11 @@ def process_wav_file(path):
         png_filename = f"{base}_aug{idx}_tf_vanilla.png"
         mel_png_filename = f"{base}_aug{idx}_tf_mel.png"
         mfcc_png_filename = f"{base}_aug{idx}_tf_mfcc.png"
-        spectogram = create_tf_vanilla_spectrogram(output_wav_filename, png_filename, True)
+        cepstrum_png_filename = f"{base}_aug{idx}_tf_cepstrum.png"
+        spectogram = create_tf_vanilla_spectrogram(output_wav_filename, png_filename, False)
         mel_spectogram = create_tf_mel_spectrogram(spectogram, mel_png_filename, True)
-        mfcc =  create_tf_mfcc(mel_spectogram, mfcc_png_filename, True)
-
+        mfcc =  create_tf_mfcc(mel_spectogram, mfcc_png_filename, False)
+        cepstrum = create_tf_cepstrum(mel_spectogram, cepstrum_png_filename, True)
         print(f"   -> {output_wav_filename}")
 
 
