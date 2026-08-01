@@ -381,11 +381,11 @@ def create_tf_mfcc(mel_spectrogram, png_filename, save_plot=False):
 
         plt.close()
 
-    return mel_spectrogram
+    return mfcc_coeficients
 
 def create_tf_cepstrum(mel_spectrogram, png_filename, save_plot=False):
 
-    capstrum = inverse_discrete_fourier_transformation(mel_spectrogram)
+    cepstrum = inverse_discrete_fourier_transformation(mel_spectrogram)
     plt.figure(figsize=(12, 4))
 
     # uncomment only for debugging
@@ -393,7 +393,7 @@ def create_tf_cepstrum(mel_spectrogram, png_filename, save_plot=False):
 
     if save_plot == True:
         plt.imshow(
-            capstrum.T,
+            cepstrum.T,
             aspect="auto",
             origin="lower",
             cmap="viridis"
@@ -415,9 +415,49 @@ def create_tf_cepstrum(mel_spectrogram, png_filename, save_plot=False):
 
         plt.close()
 
-    return mel_spectrogram
+    return cepstrum
 
 
+def create_tf_cepstrum_frames(cepstrum, png_filename, save_plot=False):
+
+    if save_plot == True:
+        n_frames, n_ceps = cepstrum.shape
+        # 10 equidistant frame indices covering the whole clip
+        frame_indices = np.linspace(0, n_frames - 1, 10)
+        frame_indices = np.unique(frame_indices.astype(int)).tolist()
+
+        # Quefrency (s) for an N-point IDFT at this sample rate
+        quefrency_sec = np.arange(n_ceps, dtype=np.float32) / SAMPLE_RATE
+
+        n_plots = len(frame_indices)
+        n_cols = 2
+        n_rows = (n_plots + n_cols - 1) // n_cols
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(12, 2.4 * n_rows), sharex=True)
+        axes = np.atleast_1d(axes).ravel()
+
+        for subplot_index, frame_index in enumerate(frame_indices):
+            ax = axes[subplot_index]
+            ax.plot(
+                quefrency_sec,
+                cepstrum[frame_index],
+                color="green",
+                label="Cepstrum",
+            )
+            ax.set_title(f"Frame {frame_index}")
+            ax.set_xlabel("Quefrency (s)")
+            ax.set_ylabel("Amplitude")
+            ax.legend(loc="upper right")
+            ax.grid(True, alpha=0.3)
+
+        for ax in axes[n_plots:]:
+            ax.set_visible(False)
+
+        fig.suptitle("Cepstrum")
+        fig.tight_layout()
+        fig.savefig(png_filename, dpi=300)
+        plt.close(fig)
+
+    return cepstrum
 # --------------------------------------------------
 # WAV I/O
 # --------------------------------------------------
@@ -667,10 +707,12 @@ def process_wav_file(path):
         mel_png_filename = f"{base}_aug{idx}_tf_mel.png"
         mfcc_png_filename = f"{base}_aug{idx}_tf_mfcc.png"
         cepstrum_png_filename = f"{base}_aug{idx}_tf_cepstrum.png"
+        cepstrum_frames_png_filename = f"{base}_aug{idx}_tf_cepstrum_frames.png"
         spectogram = create_tf_vanilla_spectrogram(output_wav_filename, png_filename, False)
-        mel_spectogram = create_tf_mel_spectrogram(spectogram, mel_png_filename, True)
+        mel_spectogram = create_tf_mel_spectrogram(spectogram, mel_png_filename, False)
         mfcc =  create_tf_mfcc(mel_spectogram, mfcc_png_filename, False)
         cepstrum = create_tf_cepstrum(mel_spectogram, cepstrum_png_filename, True)
+        create_tf_cepstrum_frames(cepstrum, cepstrum_frames_png_filename, True)
         print(f"   -> {output_wav_filename}")
 
 
