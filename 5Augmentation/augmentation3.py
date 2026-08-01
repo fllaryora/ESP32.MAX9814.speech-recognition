@@ -177,8 +177,9 @@ def get_spectrogram_original(audio):
         window_fn=tf.signal.hann_window
     )
 
-    # square of modulus
-    spectrogram = tf.abs(stft) ** 2
+    # modulus |X| = sqrt(re^2 + im^2); tf.abs on complex is that
+    # (power spectrogram would be tf.abs(stft) ** 2 == re^2 + im^2)
+    spectrogram = tf.abs(stft)
     #STFT shape: (149, 161)
     print("STFT shape:", spectrogram.shape)
     spectrogram = spectrogram.numpy()
@@ -215,10 +216,37 @@ def get_mel_spectrogram_from_vanilla(spectrogram):
 
     return mel_spectrogram
 
-def get_mfcc_from_mel_spectrogram(mel_spectrogram):   
-    #sometime the mfcc coeficients are (12 -13) the others are deleted.
+def get_mfcc_from_mel_spectrogram(mel_spectrogram):
+    # sometimes the mfcc coefficients are truncated (e.g. keep 12-13); here we keep all MEL_DOTS
     mfcc = discrete_cosine_transformation_type_2(mel_spectrogram)
-    return mfcc
+    # shape: (n_frames, 13)
+
+    # Simple first-order differences (easy to port to ESP32).
+    # Classic HTK/librosa deltas use a wider regression window (±2); different values.
+    #
+    # --- Explicit / C++-friendly version (kept for porting) ---
+    # n_frames, n_ceps = mfcc.shape
+    # delta_mfcc = np.zeros_like(mfcc)
+    # delta_delta_mfcc = np.zeros_like(mfcc)
+    # for frame_index in range(1, n_frames):
+    #     for coefficient_index in range(n_ceps):
+    #         delta_mfcc[frame_index, coefficient_index] = (
+    #             mfcc[frame_index, coefficient_index]
+    #             - mfcc[frame_index - 1, coefficient_index]
+    #         )
+    #         delta_delta_mfcc[frame_index, coefficient_index] = (
+    #             delta_mfcc[frame_index, coefficient_index]
+    #             - delta_mfcc[frame_index - 1, coefficient_index]
+    #         )
+    #
+    # Fast path (same math): frame 0 stays 0
+    delta_mfcc = np.zeros_like(mfcc)
+    delta_delta_mfcc = np.zeros_like(mfcc)
+    delta_mfcc[1:] = mfcc[1:] - mfcc[:-1]
+    delta_delta_mfcc[1:] = delta_mfcc[1:] - delta_mfcc[:-1]
+
+    # each frame: [13 mfcc | 13 delta | 13 delta-delta] -> (n_frames, 39)
+    return np.concatenate((mfcc, delta_mfcc, delta_delta_mfcc), axis=1)
 
 # ----------------------------------------------------------
 # TF SPECTROGRAM FROM WAV
