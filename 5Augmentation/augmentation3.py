@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
 
+import gc
 import os
 import random
 import wave
 
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")  # non-interactive; avoids GUI backend RAM / window buildup
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow.python.ops import gen_audio_ops as audio_ops
+
+# Cap TF thread pools so one machine does not oversubscribe RAM/CPU
+tf.config.threading.set_inter_op_parallelism_threads(1)
+tf.config.threading.set_intra_op_parallelism_threads(2)
 
 
 # ----------------------------------------------------------
@@ -123,8 +130,7 @@ def discrete_cosine_transformation_type_2(mel_spectrogram):
     dct_matrix = np.cos(np.pi * np.outer(k, n + 0.5) / n_samples)
     dct_II = mel_spectrogram @ dct_matrix.T
 
-    print("DCT-II shape:", dct_II.shape)
-    #DCT-II shape: (149, 13)
+    # print("DCT-II shape:", dct_II.shape)  # (149, 13)
     return dct_II
 
 
@@ -207,8 +213,8 @@ def get_spectrogram_original(audio):
     # modulus |X| = sqrt(re^2 + im^2); tf.abs on complex is that
     # (power spectrogram would be tf.abs(stft) ** 2 == re^2 + im^2)
     spectrogram = tf.abs(stft)
-    #STFT shape: (149, 161)
-    print("STFT shape:", spectrogram.shape)
+    # STFT shape: (149, 161)
+    # print("STFT shape:", spectrogram.shape)
     spectrogram = spectrogram.numpy()
     spectrogram = np.log10(spectrogram + 1e-6)
     return spectrogram
@@ -218,7 +224,7 @@ def get_mel_spectrogram_from_vanilla(spectrogram):
     n_freq_bins = spectrogram.shape[1]
     # apply mel scalling
     mel_spectrogram = np.zeros((number_of_frames_inSpectrum, MEL_DOTS))
-    print("Mel spectrogram shape:", mel_spectrogram.shape)
+    # print("Mel spectrogram shape:", mel_spectrogram.shape)
 
     # --- Explicit / C++-friendly version (kept for porting) ---
     # # from 0 to 148
@@ -284,12 +290,12 @@ def create_tf_vanilla_spectrogram(wav_filename, png_filename, save_plot=False):
 
     audio = get_normalized_pcm(wav_filename)
     spectrogram = get_spectrogram_original(audio)
-    plt.figure(figsize=(12, 4))
 
     # uncomment only for debugging
     # print(f"TF Shape: {spectrogram.shape}, Min: {np.min(spectrogram)}, Max: {np.max(spectrogram)}, Mean: {np.mean(spectrogram)} , Std: {np.std(spectrogram)}")
 
     if save_plot == True:
+        plt.figure(figsize=(12, 4))
         plt.imshow(
             spectrogram.T,
             aspect="auto",
@@ -308,7 +314,7 @@ def create_tf_vanilla_spectrogram(wav_filename, png_filename, save_plot=False):
 
         plt.savefig(
             png_filename,
-            dpi=300
+            dpi=150
         )
 
         plt.close()
@@ -318,12 +324,12 @@ def create_tf_vanilla_spectrogram(wav_filename, png_filename, save_plot=False):
 def create_tf_mel_spectrogram(spectrogram, png_filename, save_plot=False):
 
     mel_spectrogram = get_mel_spectrogram_from_vanilla(spectrogram)
-    plt.figure(figsize=(12, 4))
 
     # uncomment only for debugging
     # print(f"TF Shape: {spectrogram.shape}, Min: {np.min(spectrogram)}, Max: {np.max(spectrogram)}, Mean: {np.mean(spectrogram)} , Std: {np.std(spectrogram)}")
 
     if save_plot == True:
+        plt.figure(figsize=(12, 4))
         plt.imshow(
             mel_spectrogram.T,
             aspect="auto",
@@ -342,7 +348,7 @@ def create_tf_mel_spectrogram(spectrogram, png_filename, save_plot=False):
 
         plt.savefig(
             png_filename,
-            dpi=300
+            dpi=150
         )
 
         plt.close()
@@ -352,12 +358,12 @@ def create_tf_mel_spectrogram(spectrogram, png_filename, save_plot=False):
 def create_tf_mfcc(mel_spectrogram, png_filename, save_plot=False):
 
     mfcc_coeficients = get_mfcc_from_mel_spectrogram(mel_spectrogram)
-    plt.figure(figsize=(12, 4))
 
     # uncomment only for debugging
     # print(f"TF Shape: {spectrogram.shape}, Min: {np.min(spectrogram)}, Max: {np.max(spectrogram)}, Mean: {np.mean(spectrogram)} , Std: {np.std(spectrogram)}")
 
     if save_plot == True:
+        plt.figure(figsize=(12, 4))
         plt.imshow(
             mfcc_coeficients.T,
             aspect="auto",
@@ -376,7 +382,7 @@ def create_tf_mfcc(mel_spectrogram, png_filename, save_plot=False):
 
         plt.savefig(
             png_filename,
-            dpi=300
+            dpi=150
         )
 
         plt.close()
@@ -386,12 +392,12 @@ def create_tf_mfcc(mel_spectrogram, png_filename, save_plot=False):
 def create_tf_cepstrum(mel_spectrogram, png_filename, save_plot=False):
 
     cepstrum = inverse_discrete_fourier_transformation(mel_spectrogram)
-    plt.figure(figsize=(12, 4))
 
     # uncomment only for debugging
     # print(f"TF Shape: {spectrogram.shape}, Min: {np.min(spectrogram)}, Max: {np.max(spectrogram)}, Mean: {np.mean(spectrogram)} , Std: {np.std(spectrogram)}")
 
     if save_plot == True:
+        plt.figure(figsize=(12, 4))
         plt.imshow(
             cepstrum.T,
             aspect="auto",
@@ -410,7 +416,7 @@ def create_tf_cepstrum(mel_spectrogram, png_filename, save_plot=False):
 
         plt.savefig(
             png_filename,
-            dpi=300
+            dpi=150
         )
 
         plt.close()
@@ -454,7 +460,7 @@ def create_tf_cepstrum_frames(cepstrum, png_filename, save_plot=False):
 
         fig.suptitle("Cepstrum")
         fig.tight_layout()
-        fig.savefig(png_filename, dpi=300)
+        fig.savefig(png_filename, dpi=150)
         plt.close(fig)
 
     return cepstrum
@@ -691,7 +697,7 @@ def augment(audio, sample_rate, shift_number):
 # PROCESS FILE
 # --------------------------------------------------
 
-def process_wav_file(path):
+def process_wav_file(path, save_plot=False):
 
     print(f"Processing {path}")
 
@@ -708,31 +714,40 @@ def process_wav_file(path):
         mfcc_png_filename = f"{base}_aug{idx}_tf_mfcc.png"
         cepstrum_png_filename = f"{base}_aug{idx}_tf_cepstrum.png"
         cepstrum_frames_png_filename = f"{base}_aug{idx}_tf_cepstrum_frames.png"
-        spectogram = create_tf_vanilla_spectrogram(output_wav_filename, png_filename, True)
-        mel_spectogram = create_tf_mel_spectrogram(spectogram, mel_png_filename, True)
-        mfcc =  create_tf_mfcc(mel_spectogram, mfcc_png_filename, True)
-        cepstrum = create_tf_cepstrum(mel_spectogram, cepstrum_png_filename, False)
-        create_tf_cepstrum_frames(cepstrum, cepstrum_frames_png_filename, False)
+        spectogram = create_tf_vanilla_spectrogram(output_wav_filename, png_filename, save_plot)
+        mel_spectogram = create_tf_mel_spectrogram(spectogram, mel_png_filename, save_plot)
+        mfcc = create_tf_mfcc(mel_spectogram, mfcc_png_filename, save_plot)
+        cepstrum = create_tf_cepstrum(mel_spectogram, cepstrum_png_filename, save_plot)
+        create_tf_cepstrum_frames(cepstrum, cepstrum_frames_png_filename, save_plot)
+        # Drop large arrays ASAP so RAM does not pile up across 33 augs
+        del spectogram, mel_spectogram, mfcc, cepstrum, aug_audio
         print(f"   -> {output_wav_filename}")
+
+    plt.close("all")
+    gc.collect()
 
 
 # --------------------------------------------------
 # PROCESS FOLDER
 # --------------------------------------------------
 
-def process_folder(root_folder):
+def process_folder(root_folder, save_plot=False):
 
+    wav_paths = []
     for root, dirs, files in os.walk(root_folder):
-
         for file in files:
-
             if not file.lower().endswith(".wav"):
                 continue
-
             if "_aug" in file:
                 continue
+            wav_paths.append(os.path.join(root, file))
 
-            process_wav_file(os.path.join(root, file))
+    total = len(wav_paths)
+    print(f"Found {total} source WAV files (save_plot={save_plot})")
+
+    for i, path in enumerate(wav_paths, start=1):
+        print(f"[{i}/{total}] ", end="")
+        process_wav_file(path, save_plot=save_plot)
 
 
 # --------------------------------------------------
@@ -743,7 +758,8 @@ if __name__ == "__main__":
 
     DATASET_DIR = "./DATASET"
 
-    #process_folder(DATASET_DIR)
-    process_wav_file("../DATASET/SI/SI_10.wav")
-    
+    # Folder runs: keep save_plot=False (plots are the RAM killer).
+    # Single-file debug with plots:
+    process_folder(DATASET_DIR, save_plot=False)
+
     print("\nFinished.")
