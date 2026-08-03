@@ -10,8 +10,9 @@
 #define DO_NOT_FORSAKE_IN_CASE_OF_TIME_OUT portMAX_DELAY
 
 
-#define RECORDING_DURATION 3 //sec - No enough memory for 10 seconds
-#define TOTAL_SAMPLES ( (size_t) (SAMPLE_RATE * RECORDING_DURATION) )
+//#define RECORDING_DURATION 3 //sec - No enough memory for 10 seconds
+//#define TOTAL_SAMPLES ( (size_t) (SAMPLE_RATE * RECORDING_DURATION) )
+#define TOTAL_SAMPLES ( (size_t) (24000) ) //1.5 segundos
 #define TOTAL_SAMPLES_IN_BYTES ( (size_t) (TOTAL_SAMPLES * sizeof(uint16_t)) )
 
 /*In case of error it will halt and send the cause by serial*/
@@ -146,6 +147,27 @@ void recordAudio(uint16_t * rawBufferData, uint8_t recordingLed, uint8_t errorBl
      //centered of the wave in 0.
      rawBufferData [time] = (uint16_t) raw - 2048;
   }
+
+  /**********DEPURATION VALUES************/
+  /*
+  uint16_t minSample = rawBufferData [0];
+  uint16_t maxSample = rawBufferData [0];
+  uint16_t meanSample = rawBufferData [0];
+
+   for(size_t time = 1; time < TOTAL_SAMPLES; time++){
+     if(rawBufferData [time] > maxSample) {
+      maxSample = rawBufferData [time];
+     }
+     if(rawBufferData [time] < minSample) {
+      minSample = rawBufferData [time];
+     }
+     meanSample += rawBufferData [time];
+
+  }
+
+  Serial.printf("PCM min=%d max=%d mean=%f", minSample, maxSample, meanSample/48000.0f);
+  */
+  /**********END DEPURATION VALUES************/
 
 }
 
