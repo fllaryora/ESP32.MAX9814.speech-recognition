@@ -35,6 +35,9 @@ SAMPLE_RATE = 16000
 
 DATASET_DIR = "./DATASET"
 
+SECONDS_OF_WAV = 24000 # 1500 mili seconds
+Epochs = 30 # 30 is better than 50.  
+
 # --------------------------------------------------
 # WAV --> PCM
 # --------------------------------------------------
@@ -45,7 +48,7 @@ def get_normalized_pcm( wav_filename):
         # Load audio file
         audio_binary = tf.io.read_file(wav_filename)
         audio, sample_rate = tf.audio.decode_wav(audio_binary, desired_channels=1)
-        audio = audio[:24000]
+        audio = audio[:SECONDS_OF_WAV]
 
         
         # Remove channel dimension: (samples, 1) -> (samples,)
@@ -139,7 +142,7 @@ def create_tf_spectrogram(wav_filename):
 # Directory --> [spectrogram, CNN class]
 # --------------------------------------------------
 
-def load_dataset(root_folder):
+def load_datasetALL(root_folder):
 
     X_data = []
     Y_labels = []
@@ -190,6 +193,67 @@ def load_dataset(root_folder):
     #print("X_data shape:", X_data.shape)
     return (X_data,Y_labels,classes)
 
+def load_dataset(root_folder, VALID_CLASSES, UNKNOWN_CLASS, take_others_as_unknown = True):
+
+    X_data = []
+    Y_labels = []
+
+    classes = sorted(
+        [
+            directory
+            for directory in os.listdir(root_folder)
+            if os.path.isdir(
+                os.path.join(root_folder, directory)
+            )
+        ]
+    )
+
+    #print("\nOriginal classes found:")
+    #print(classes)
+
+    for class_name in classes:
+
+        class_dir = os.path.join(root_folder, class_name)
+
+        if take_others_as_unknown == True:
+            if class_name in VALID_CLASSES:
+                target_label = class_name
+            else:
+                target_label = UNKNOWN_CLASS
+        else:
+            if class_name in VALID_CLASSES:
+                target_label = class_name
+            else:
+                continue
+
+        for file in os.listdir(class_dir):
+
+            if not file.lower().endswith(".wav"):
+                continue
+
+            wav_path = os.path.join(class_dir, file)
+
+            try:
+
+                spectrogram = create_tf_spectrogram(wav_path)
+
+                spectrogram = np.expand_dims( spectrogram, axis = -1 )
+
+                X_data.append(spectrogram)
+
+                Y_labels.append(target_label)
+
+            except Exception as e:
+
+                print(f"ERROR {wav_path}")
+                print(e)
+
+    X_data = np.array( X_data, dtype = np.float32 )
+
+    label_names = sorted( list( set (Y_labels)))
+
+    return ( X_data, Y_labels, label_names )
+
 # --------------------------------------------------
 # MODEL
 # --------------------------------------------------
@@ -231,14 +295,15 @@ def create_model( image_height, image_width, channels, num_labels):
     # 1st fully connected layer.
     model_CNN.add( Dense( filters[3], activation="relu" ) )
     # it means reduce overfitting when unknow is read
-    model_CNN.add(Dropout(0.3))
+    #model_CNN.add(Dropout(0.3))
+    #in smalls networks use 0 dropout.
 
     # 2nd fully connected layer (model output).
     model_CNN.add( Dense( num_labels, activation="softmax"))
 
     #model_CNN.compile( optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"] )
-    model_CNN.compile( optimizer="adam", loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.05), metrics=["accuracy"] )
-
+    #model_CNN.compile( optimizer="adam", loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.05), metrics=["accuracy"] )
+    model_CNN.compile( optimizer="adam", loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0), metrics=["accuracy"] )
     # Output a textual representation of the neural network model structure. 
     model_CNN.summary()
     return model_CNN
@@ -287,8 +352,10 @@ def plot_confusion_matrix(cm, class_names, file_name):
 if __name__ == "__main__":
 
     print("\nLoading dataset...")
+    VALID_CLASSES = {"SI", "NO", "BASURA"}
+    UNKNOWN_CLASS = "BASURA"
 
-    X_data, Y_labels, label_names = load_dataset(DATASET_DIR)
+    X_data, Y_labels, label_names = load_dataset(DATASET_DIR, VALID_CLASSES, UNKNOWN_CLASS, take_others_as_unknown = False)
 
     #print("\nDataset loaded")
 
@@ -343,7 +410,6 @@ if __name__ == "__main__":
 
     model_CNN.summary()
     # Number of training iterations. epochs
-    Epochs = 50 # 30 is better than 50.  
     # Start training the model.
     history = model_CNN.fit(X_train, Y_train,
         validation_data=( X_test,Y_test ),
