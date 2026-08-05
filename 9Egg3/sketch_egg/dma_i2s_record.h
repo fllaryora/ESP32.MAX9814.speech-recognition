@@ -5,7 +5,7 @@
 #include "driver/adc.h"
 
 #define SAMPLE_RATE 16000 //Hz - No enough memory for 44100hz
-#define I2S_PORT I2S_NUM_0 // GPIO36 // PIN VP
+#define I2S_PORT I2S_NUM_0 // refers to the first physical I2S hardware controller inside the ESP32 chip.
 #define ADC_CHANNEL ADC1_CHANNEL_0 // GPIO36 // PIN VP
 #define DO_NOT_FORSAKE_IN_CASE_OF_TIME_OUT portMAX_DELAY
 
@@ -20,7 +20,6 @@ void setupI2S() {
 
   static const i2s_config_t i2s_config = {
     // 12 bit of resolution
-    //.mode = (i2s_mode_t) (I2S_MODE_MASTER | I2S_MODE_ADC_BUILT_IN),
     .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_ADC_BUILT_IN),
     .sample_rate = SAMPLE_RATE,
     .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT, //waste 4bits per sample.
@@ -56,7 +55,10 @@ void setupI2S() {
 
   //the follow configuration is for a ADC microphone MAX 9814 by sending analog values.
   // In case of I2S microphone like INMP441 cpnfig with i2s_set_pin
+//Built-in DAC functions are only supported on I2S0 for current ESP32 chip. 
 
+//SET pin both channels: https://docs.espressif.com/projects/esp-idf/en/v4.2.3/esp32/api-reference/peripherals/i2s.html
+/*Each controller can operate in half-duplex communication mode. Thus, the two controllers can be combined to establish full-duplex communication.*/
   esp_err_t modeStatus = i2s_set_adc_mode(ADC_UNIT_1, ADC_CHANNEL);
   if (ESP_OK != modeStatus) {
     if (ESP_ERR_INVALID_ARG == modeStatus) {

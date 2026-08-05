@@ -5,6 +5,10 @@
 #include "driver/i2s.h"
 #include "./dma_i2s_record.h"
 
+#ifndef PLAY_TEST
+#define PLAY_TEST 0
+#endif
+
 /*
  * MAX98357A wiring (left DevKit header, same side as mic VP):
  *
@@ -12,15 +16,24 @@
  *   GPIO 27  -->  BCLK
  *   GPIO 26  -->  DIN
  *
- *   GAIN     -->  100 kΩ --> GND     (15 dB)
- *   SD       -->  Float (leave unconnected)  // left-channel mono
+ *   GAIN     -->  pull down 100 kΩ --> GND     (15 dB)
+ *   GAIN     -->  GND     (12 dB)  (*use it)
+ *   GAIN     -->  Floating     (9 dB)
+ *   GAIN     -->  Vin     (6 dB)
+ *   GAIN     -->  pull up 100 kΩ --> Vin (3 dB)
+ *
+ *   SD       -->  (< 0.16 V) GND  // SHUT DOWN 
+ *   SD       -->  (0.16 V- 0.77V) Float (leave unconnected)  // (LEFT + RIGHT)/2
+ *   SD       -->  (0.77 V - 1.4V) pull up 39 kΩ --> Vin     (RIGHT)
+ *   SD       -->  (> 1.4 V) VIN   (LEFT). (*use it)
+
  *   GND      -->  GND
- *   Vin      -->  3.3 V
+ *   Vin      -->  3.3 V (0.6 Watts)
  *   Speaker+ -->  amp Out+
  *   Speaker- -->  amp Out-
  */
 
-#define I2S_SPEAKER_PORT I2S_NUM_1
+#define I2S_SPEAKER_PORT I2S_NUM_1 //  refers to the second physical I2S hardware controller inside the ESP32 chip.
 #define I2S_LRC_PIN      14
 #define I2S_BCLK_PIN     27
 #define I2S_DOUT_PIN     26
@@ -30,21 +43,35 @@
 #define PLAY_SINE_DURATION_MS  1000
 #define PLAY_CHUNK_SAMPLES     256
 
+/* Standard MPEG-1 Layer III decode target (consumer MP3). */
+#define MP3_SAMPLE_RATE        44100
+/* MPEG-1 Layer III: 1152 PCM samples per channel per frame. */
+#define MP3_FRAME_SAMPLES      1152
+
+//Esto llama al #include "./dma_i2s_record.h"
 void stopMicForPlayback() {
   teardownI2S();
 }
 
+//Esto llama al #include "./dma_i2s_record.h"
 void restoreMicI2S() {
   setupI2S();
 }
 
 void setupSpeakerI2S() {
+
+#if PLAY_TEST
   static const i2s_config_t i2s_config = {
+    // speaker mode
     .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
     .sample_rate = SAMPLE_RATE,
+    // 16 bits mode - Sound like a shit but it is ok for me?? 
     .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+    // ONLY LEFT (SD --> VIN)
     .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
+    // Philips mode 
     .communication_format = I2S_COMM_FORMAT_I2S,
+    // interruption flags///< Accept a Level 1 interrupt vector (lowest priority)
     .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
     .dma_buf_count = 8,
     .dma_buf_len = 256,
@@ -52,11 +79,37 @@ void setupSpeakerI2S() {
     .tx_desc_auto_clear = true,
     .fixed_mclk = 0
   };
+#else
+  /* PCM after standard MP3 decode: 44.1 kHz, 16-bit, stereo interleaved (LRLR...).
+   * SD --> VIN selects LEFT word only from that stereo stream.
+   * dma_buf_len sized to one MPEG-1 Layer III frame; APLL for accurate 44.1 kHz. */
+  static const i2s_config_t i2s_config = {
+    .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
+    .sample_rate = MP3_SAMPLE_RATE,
+    .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+    .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+    .communication_format = I2S_COMM_FORMAT_I2S,
+    .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+    .dma_buf_count = 8,
+    .dma_buf_len = MP3_FRAME_SAMPLES,
+    .use_apll = true,
+    .tx_desc_auto_clear = true,
+    .fixed_mclk = 0
+  };
+#endif
 
   esp_err_t installStatus = i2s_driver_install(I2S_SPEAKER_PORT, &i2s_config, 0, NULL);
-  if (ESP_OK != installStatus) {
-    Serial.println(" Error : speaker i2s_driver_install failed");
-    while (true);
+ if (ESP_OK != installStatus) {
+    if (ESP_ERR_INVALID_ARG == installStatus) {
+      Serial.println(" Error : i2s_driver_install BAD parameter");
+       while(true);
+    }
+    if (ESP_ERR_NO_MEM == installStatus) {
+      Serial.println(" Error : i2s_driver_install  out of memory");
+       while(true);
+    }
+    Serial.println(" Error : i2s_driver_install  ????");
+    while(true);
   }
 
   static const i2s_pin_config_t pin_config = {
@@ -66,10 +119,18 @@ void setupSpeakerI2S() {
     .data_in_num = I2S_PIN_NO_CHANGE
   };
 
-  esp_err_t pinStatus = i2s_set_pin(I2S_SPEAKER_PORT, &pin_config);
-  if (ESP_OK != pinStatus) {
-    Serial.println(" Error : speaker i2s_set_pin failed");
-    while (true);
+  installStatus = i2s_set_pin(I2S_SPEAKER_PORT, &pin_config);
+  if (ESP_OK != installStatus) {
+    if (ESP_ERR_INVALID_ARG == installStatus) {
+      Serial.println(" Error : i2s_set_pin BAD parameter");
+       while(true);
+    }
+    if (ESP_FAIL == installStatus) {
+      Serial.println(" Error : i2s_set_pin   I/O Error");
+       while(true);
+    }
+    Serial.println(" Error : i2s_set_pin  ????");
+    while(true);
   }
 }
 
@@ -124,7 +185,10 @@ void playTestSineBeep(uint8_t errorBlinkLed) {
   int16_t chunk[PLAY_CHUNK_SAMPLES];
 
   Serial.println("PLAY");
-  stopMicForPlayback();
+
+  //TEST WITHOUT IT
+  //stopMicForPlayback();
+
   setupSpeakerI2S();
 
   size_t sampleIndex = 0;
@@ -136,8 +200,9 @@ void playTestSineBeep(uint8_t errorBlinkLed) {
 
   // Let DMA drain the last buffers before uninstall.
   delay(50);
-  teardownSpeakerI2S();
-  restoreMicI2S();
+  //TEST WITHOUT IT
+  //teardownSpeakerI2S();
+  //restoreMicI2S();
   Serial.println("PLAY_DONE");
 }
 

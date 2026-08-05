@@ -1,5 +1,6 @@
 #include <Arduino.h>
 // arduino-cli compile --fqbn esp32:esp32:esp32 "Path"
+#define PLAY_TEST 1
 #include "./dma_malloc.h"
 #include "./dma_i2s_record.h"
 #include "./dma_i2s_play.h"
@@ -9,7 +10,6 @@
 
 #define LED_PIN 2  // BLUE LED on ESP32 - D2 //NO PIN
 #define SERIAL_BAUD 115200 //460800//115200
-#define PLAY_TEST 1
 // other speeds
 //230_400
 //460_800
@@ -52,13 +52,9 @@ void setup() {
   
   //=== First stage == initialization
   rawAudioData = malloc_dma_buffer(TOTAL_SAMPLES_IN_BYTES, errorBlinkLed);
-  
   tensor_arena = (uint8_t *) malloc_dma_buffer(TENSOR_ARENA_SIZE , errorBlinkLed);
-  
   cnn = (ConvNeurNetwork*) malloc_dma_buffer(sizeof(ConvNeurNetwork), errorBlinkLed);
-  
   cnn->tensor_arena = tensor_arena;
-  
   setupCNN(cnn, errorBlinkLed);
   
   //To write the spectrogram strightfoward on CNN input
