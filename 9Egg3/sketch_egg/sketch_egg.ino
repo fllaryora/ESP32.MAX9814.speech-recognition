@@ -84,9 +84,8 @@ void setup() {
   }
 
   setupI2S();
-
 #if PLAY_TEST
-  playTestSineBeep(errorBlinkLed);
+  //playTestSineBeep(errorBlinkLed);
 #endif
 
   Serial.println("SETUP OK");
@@ -176,6 +175,10 @@ void loop() {
   uint8_t errorBlinkLed = LED_PIN;
   uint8_t recordingLed = LED_PIN;
 
+#if PLAY_TEST
+  playTestSineBeep(errorBlinkLed);
+#endif
+  delay(700);
   recordAudio(rawAudioData, recordingLed, errorBlinkLed);
    bool voiceDetected = get_spectrogram( memory );
   if(voiceDetected) {
@@ -203,6 +206,8 @@ void loop() {
     Serial.println("===================");
     setLedsByPrediction(results[0].index);
  
+  } else {
+    Serial.println("Only noise was detected");
   }
   
 }

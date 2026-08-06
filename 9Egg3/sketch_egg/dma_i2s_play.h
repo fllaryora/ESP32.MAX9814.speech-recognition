@@ -50,11 +50,13 @@
 
 //Esto llama al #include "./dma_i2s_record.h"
 void stopMicForPlayback() {
+  Serial.println("stopMicForPlayback");
   teardownI2S();
 }
 
 //Esto llama al #include "./dma_i2s_record.h"
 void restoreMicI2S() {
+  Serial.println("restoreMicI2S");
   setupI2S();
 }
 
@@ -135,6 +137,7 @@ void setupSpeakerI2S() {
 }
 
 void teardownSpeakerI2S() {
+  Serial.println("teardownSpeakerI2S");
   i2s_driver_uninstall(I2S_SPEAKER_PORT);
 }
 
@@ -187,7 +190,7 @@ void playTestSineBeep(uint8_t errorBlinkLed) {
   Serial.println("PLAY");
 
   //TEST WITHOUT IT
-  //stopMicForPlayback();
+  stopMicForPlayback();
 
   setupSpeakerI2S();
 
@@ -201,8 +204,8 @@ void playTestSineBeep(uint8_t errorBlinkLed) {
   // Let DMA drain the last buffers before uninstall.
   delay(50);
   //TEST WITHOUT IT
-  //teardownSpeakerI2S();
-  //restoreMicI2S();
+  teardownSpeakerI2S();
+  restoreMicI2S();
   Serial.println("PLAY_DONE");
 }
 
